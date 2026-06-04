@@ -147,7 +147,7 @@ def start_gsv(payload: SettingsPayload | None = None):
 
 @app.post("/api/gsv/stop")
 def stop_gsv():
-    return stop_gsv_api()
+    return stop_gsv_api(load_settings())
 
 
 @app.post("/api/gsv/apply-models")

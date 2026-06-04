@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import os
+import requests
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -66,6 +67,7 @@ def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         _process = subprocess.Popen(
             command,
             cwd=GSV_DIR,
@@ -91,12 +93,22 @@ def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def stop_gsv_api() -> dict[str, Any]:
+def _base_url(settings: dict[str, Any]) -> str:
+    return (settings.get("gsv_api_url") or "http://127.0.0.1:9880").rstrip("/")
+
+
+def stop_gsv_api(settings: dict[str, Any] | None = None) -> dict[str, Any]:
     global _process
 
     with _process_lock:
         if not _is_owned_process_running():
             _process = None
+            if settings and check_gsv_api(settings).get("ok"):
+                try:
+                    requests.get(f"{_base_url(settings)}/control", params={"command": "exit"}, timeout=5)
+                    return {"ok": True, "stopped": True, "via_control": True}
+                except requests.RequestException as exc:
+                    return {"ok": False, "stopped": False, "error": str(exc)}
             return {"ok": True, "stopped": False}
 
         pid = _process.pid

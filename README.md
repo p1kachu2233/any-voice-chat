@@ -207,7 +207,7 @@ config/user_settings.json
 
 聊天接口默认使用流式输出：网页会边接收大模型文本边显示。后端会按句号、问号、感叹号、分号等边界拆分回复文本，并把每段文本送到 GPT-SoVITS 合成；浏览器收到每段音频后会排队连续播放。
 
-Windows 下 GPT-SoVITS 可能因为控制台 GBK 编码无法处理 emoji 等字符，出现类似 `'gbk' codec can't encode character` 的错误。本项目会保留网页显示文本，但在送入 TTS 前移除 GBK 不支持的字符，避免语音合成失败。
+Windows 下如果 GPT-SoVITS 进程不是以 UTF-8 环境启动，可能出现类似 `'gbk' codec can't encode character` 的错误。本项目从网页启动 GSV 时会设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`。如果 GSV 是之前手动启动的，请停止后从网页重新启动。
 
 ## 参考
 

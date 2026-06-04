@@ -74,7 +74,7 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 
 后台页面入口为 `/admin`，用于查看服务状态、应用日志和 GSV 日志。应用日志写入 `runtime/app.log`，GSV API 日志写入 `runtime/gsv_api.log`。用户反馈服务无响应或 GSV 报错时，优先查看后台页和这两个日志。
 
-TTS 前需要对模型回复做语音文本清洗：网页显示可以保留 emoji 和特殊字符，但送入 GSV 的文本应移除 GBK 不支持字符，避免 Windows/GSV 报 `'gbk' codec can't encode character`。
+OpenAI 流式响应必须按 UTF-8 bytes 解码，不要使用 `requests.iter_lines(decode_unicode=True)` 的默认响应编码，否则中文会变成 mojibake。GSV 子进程启动时设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`，避免 Windows 控制台 GBK 编码导致 `'gbk' codec can't encode character`。
 
 ## GPT-SoVITS 安装注意事项
 

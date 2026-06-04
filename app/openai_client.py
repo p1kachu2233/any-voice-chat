@@ -86,7 +86,10 @@ def stream_chat_completion(settings: dict[str, Any], user_text: str, history: li
                 detail = response.text
             raise RuntimeError(f"OpenAI 请求失败：{detail}")
 
-        for line in response.iter_lines(decode_unicode=True):
+        for line_bytes in response.iter_lines(decode_unicode=False):
+            if not line_bytes:
+                continue
+            line = line_bytes.decode("utf-8", errors="replace")
             if not line:
                 continue
             if line.startswith("data: "):

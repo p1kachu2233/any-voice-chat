@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 import uuid
-import re
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +13,6 @@ OUTPUT_DIR = ROOT_DIR / "runtime" / "outputs"
 
 _model_lock = threading.Lock()
 _last_applied: dict[str, str] = {"gpt_weights_path": "", "sovits_weights_path": ""}
-_space_re = re.compile(r"\s+")
 
 
 def _base_url(settings: dict[str, Any]) -> str:
@@ -49,10 +47,8 @@ def apply_gsv_models(settings: dict[str, Any], force: bool = False) -> None:
 
 
 def sanitize_tts_text(text: str) -> str:
-    """Keep display text intact elsewhere, but remove chars that break GSV on GBK Windows consoles."""
-    cleaned = (text or "").encode("gbk", errors="ignore").decode("gbk", errors="ignore")
-    cleaned = _space_re.sub(" ", cleaned).strip()
-    return cleaned
+    """Normalize text for TTS without changing user-visible chat content."""
+    return (text or "").strip()
 
 
 def synthesize(settings: dict[str, Any], text: str) -> Path:
