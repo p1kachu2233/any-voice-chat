@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+import os
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -63,12 +64,15 @@ def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
             DEFAULT_TTS_CONFIG,
         ]
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
         _process = subprocess.Popen(
             command,
             cwd=GSV_DIR,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             creationflags=creationflags,
+            env=env,
         )
 
     for _ in range(120):

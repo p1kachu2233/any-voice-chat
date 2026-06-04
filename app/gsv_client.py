@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ OUTPUT_DIR = ROOT_DIR / "runtime" / "outputs"
 
 _model_lock = threading.Lock()
 _last_applied: dict[str, str] = {"gpt_weights_path": "", "sovits_weights_path": ""}
+_space_re = re.compile(r"\s+")
 
 
 def _base_url(settings: dict[str, Any]) -> str:
@@ -46,6 +48,13 @@ def apply_gsv_models(settings: dict[str, Any], force: bool = False) -> None:
             _last_applied[key] = path
 
 
+def sanitize_tts_text(text: str) -> str:
+    """Keep display text intact elsewhere, but remove chars that break GSV on GBK Windows consoles."""
+    cleaned = (text or "").encode("gbk", errors="ignore").decode("gbk", errors="ignore")
+    cleaned = _space_re.sub(" ", cleaned).strip()
+    return cleaned
+
+
 def synthesize(settings: dict[str, Any], text: str) -> Path:
     ref_audio_path = (settings.get("ref_audio_path") or "").strip()
     prompt_lang = (settings.get("prompt_lang") or "").strip()
@@ -54,6 +63,10 @@ def synthesize(settings: dict[str, Any], text: str) -> Path:
         raise ValueError("请先在 GSV 设置中填写参考音频路径")
     if not prompt_lang or not text_lang:
         raise ValueError("请先填写参考音频语种和输出文本语种")
+
+    text = sanitize_tts_text(text)
+    if not text:
+        raise ValueError("清洗后没有可用于语音合成的文本")
 
     apply_gsv_models(settings)
 

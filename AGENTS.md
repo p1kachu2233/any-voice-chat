@@ -51,7 +51,7 @@ conda run -n GPTSoVits <command>
 本项目的网页聊天链路为：
 
 ```text
-浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions -> GPT-SoVITS API /tts -> 浏览器播放
+浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions 流式输出 -> GPT-SoVITS API /tts 分段合成 -> 浏览器排队播放
 ```
 
 后端使用 FastAPI，入口为：
@@ -73,6 +73,8 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 默认 GSV 参考音频路径为 `D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav`，默认参考文本为 `新华社的朋友们大家好，我是鞠婧祎`。
 
 后台页面入口为 `/admin`，用于查看服务状态、应用日志和 GSV 日志。应用日志写入 `runtime/app.log`，GSV API 日志写入 `runtime/gsv_api.log`。用户反馈服务无响应或 GSV 报错时，优先查看后台页和这两个日志。
+
+TTS 前需要对模型回复做语音文本清洗：网页显示可以保留 emoji 和特殊字符，但送入 GSV 的文本应移除 GBK 不支持字符，避免 Windows/GSV 报 `'gbk' codec can't encode character`。
 
 ## GPT-SoVITS 安装注意事项
 

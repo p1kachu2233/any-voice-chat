@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import queue
+import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -12,7 +16,7 @@ from app.asr_service import convert_to_wav, save_upload, transcribe_audio
 from app.gsv_client import apply_gsv_models, synthesize
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.log_store import APP_LOG_PATH, log_exception, read_tail
-from app.openai_client import chat_completion
+from app.openai_client import chat_completion, stream_chat_completion
 from app.settings import ROOT_DIR, load_settings, save_settings
 
 
@@ -35,6 +39,70 @@ class ChatPayload(BaseModel):
 
 class TtsPayload(BaseModel):
     text: str
+
+
+_sentence_end_re = re.compile(r"[。！？!?；;\n]")
+_soft_split_re = re.compile(r"[，,、：:]")
+
+
+def _stream_event(event: str, data: dict[str, Any]) -> str:
+    return json.dumps({"event": event, **data}, ensure_ascii=False) + "\n"
+
+
+def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]:
+    text = buffer.strip()
+    if not text:
+        return None, ""
+
+    hard_matches = list(_sentence_end_re.finditer(buffer))
+    if hard_matches:
+        end = hard_matches[-1].end()
+        segment = buffer[:end].strip()
+        rest = buffer[end:]
+        if len(segment) >= 4:
+            return segment, rest
+
+    if len(text) >= 60:
+        soft_matches = list(_soft_split_re.finditer(buffer))
+        if soft_matches:
+            end = soft_matches[-1].end()
+            segment = buffer[:end].strip()
+            rest = buffer[end:]
+            if len(segment) >= 12:
+                return segment, rest
+
+    if len(text) >= 90:
+        return text, ""
+
+    if final:
+        return text, ""
+    return None, buffer
+
+
+def _iter_completed_audio(audio_queue: queue.Queue):
+    while True:
+        try:
+            yield audio_queue.get_nowait()
+        except queue.Empty:
+            break
+
+
+def _submit_tts(executor: ThreadPoolExecutor, audio_queue: queue.Queue, settings: dict[str, Any], segment: str) -> None:
+    def worker():
+        try:
+            audio_path = synthesize(settings, segment)
+            audio_queue.put(
+                {
+                    "event": "audio",
+                    "text": segment,
+                    "audio_url": f"/api/audio/{audio_path.name}",
+                }
+            )
+        except Exception as exc:
+            log_exception("tts.segment", exc)
+            audio_queue.put({"event": "audio_error", "text": segment, "message": str(exc)})
+
+    executor.submit(worker)
 
 
 @app.get("/")
@@ -121,6 +189,59 @@ def chat(payload: ChatPayload):
         log_exception("chat", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"user_text": user_text, "assistant_text": assistant_text, "audio_url": audio_url}
+
+
+@app.post("/api/chat/stream")
+def chat_stream(payload: ChatPayload):
+    settings = load_settings()
+    user_text = payload.message.strip()
+    if not user_text:
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    def generate():
+        assistant_text = ""
+        tts_buffer = ""
+        audio_queue: queue.Queue = queue.Queue()
+        pending_segments = 0
+
+        yield _stream_event("start", {"user_text": user_text})
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            try:
+                for delta in stream_chat_completion(settings, user_text, payload.history):
+                    assistant_text += delta
+                    tts_buffer += delta
+                    yield _stream_event("text_delta", {"delta": delta})
+
+                    while True:
+                        segment, tts_buffer = _pop_tts_segment(tts_buffer)
+                        if segment is None:
+                            break
+                        if payload.speak:
+                            pending_segments += 1
+                            _submit_tts(executor, audio_queue, settings, segment)
+
+                    for item in _iter_completed_audio(audio_queue):
+                        if item.get("event") in {"audio", "audio_error"}:
+                            pending_segments = max(0, pending_segments - 1)
+                        yield _stream_event(item.pop("event"), item)
+
+                segment, tts_buffer = _pop_tts_segment(tts_buffer, final=True)
+                if segment and payload.speak:
+                    pending_segments += 1
+                    _submit_tts(executor, audio_queue, settings, segment)
+
+                while pending_segments > 0:
+                    item = audio_queue.get()
+                    if item.get("event") in {"audio", "audio_error"}:
+                        pending_segments = max(0, pending_segments - 1)
+                    yield _stream_event(item.pop("event"), item)
+
+                yield _stream_event("done", {"assistant_text": assistant_text})
+            except Exception as exc:
+                log_exception("chat.stream", exc)
+                yield _stream_event("error", {"message": str(exc)})
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 @app.post("/api/voice-chat")

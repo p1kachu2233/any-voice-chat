@@ -129,7 +129,7 @@ requirements.txt
 本项目提供一个本地 Web 页面，用于串联：
 
 ```text
-浏览器录音 -> GPT-SoVITS/tools/asr 转写 -> OpenAI 兼容聊天接口 -> GPT-SoVITS API 合成语音
+浏览器录音 -> GPT-SoVITS/tools/asr 转写 -> OpenAI 兼容流式聊天接口 -> GPT-SoVITS API 分段合成语音
 ```
 
 激活 conda 环境后，使用一个 Python 命令启动本项目：
@@ -202,6 +202,12 @@ config/user_settings.json
 ```
 
 该文件包含 API Key 等个人配置，已被 `.gitignore` 忽略，不应提交到仓库。
+
+### 流式输出与分段语音
+
+聊天接口默认使用流式输出：网页会边接收大模型文本边显示。后端会按句号、问号、感叹号、分号等边界拆分回复文本，并把每段文本送到 GPT-SoVITS 合成；浏览器收到每段音频后会排队连续播放。
+
+Windows 下 GPT-SoVITS 可能因为控制台 GBK 编码无法处理 emoji 等字符，出现类似 `'gbk' codec can't encode character` 的错误。本项目会保留网页显示文本，但在送入 TTS 前移除 GBK 不支持的字符，避免语音合成失败。
 
 ## 参考
 

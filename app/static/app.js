@@ -12,6 +12,8 @@ let history = [];
 let recorder = null;
 let chunks = [];
 let busy = false;
+let audioQueue = [];
+let audioPlaying = false;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -56,6 +58,39 @@ function appendMessage(role, content, audioUrl = null) {
     replyAudio.play().catch(() => {});
   }
 }
+
+function createStreamingMessage(role) {
+  clearEmpty();
+  const item = document.createElement("div");
+  item.className = `message ${role}`;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  item.appendChild(bubble);
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight;
+  return bubble;
+}
+
+function enqueueAudio(audioUrl) {
+  if (!audioUrl) return;
+  audioQueue.push(audioUrl);
+  playNextAudio();
+}
+
+function playNextAudio() {
+  if (audioPlaying || audioQueue.length === 0) return;
+  audioPlaying = true;
+  replyAudio.src = audioQueue.shift();
+  replyAudio.play().catch(() => {
+    audioPlaying = false;
+    playNextAudio();
+  });
+}
+
+replyAudio.addEventListener("ended", () => {
+  audioPlaying = false;
+  playNextAudio();
+});
 
 function readForm() {
   const data = {};
@@ -105,22 +140,66 @@ async function runChat(userText) {
   if (!text) return;
 
   busy = true;
-  setStatus("思考中");
+  setStatus("模型输出中");
   appendMessage("user", text);
+  const assistantBubble = createStreamingMessage("assistant");
+  let assistantText = "";
+  let buffer = "";
   messageInput.value = "";
 
   try {
-    const result = await requestJson("/api/chat", {
+    const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, history, speak: true }),
     });
-    history.push({ role: "user", content: result.user_text });
-    history.push({ role: "assistant", content: result.assistant_text });
-    appendMessage("assistant", result.assistant_text, result.audio_url);
+    if (!response.ok || !response.body) {
+      const payload = await response.text();
+      throw new Error(payload || "流式请求失败");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.event === "text_delta") {
+          assistantText += event.delta || "";
+          assistantBubble.textContent = assistantText;
+          messages.scrollTop = messages.scrollHeight;
+        } else if (event.event === "audio") {
+          enqueueAudio(event.audio_url);
+          setStatus("播放语音中");
+        } else if (event.event === "audio_error") {
+          setStatus(`分段合成失败：${event.message}`);
+        } else if (event.event === "error") {
+          throw new Error(event.message);
+        } else if (event.event === "done") {
+          assistantText = event.assistant_text || assistantText;
+          assistantBubble.textContent = assistantText;
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer);
+      if (event.event === "done") {
+        assistantText = event.assistant_text || assistantText;
+        assistantBubble.textContent = assistantText;
+      }
+    }
+
+    history.push({ role: "user", content: text });
+    history.push({ role: "assistant", content: assistantText });
     setStatus("完成");
   } catch (error) {
-    appendMessage("assistant", `出错：${error.message}`);
+    assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
     setStatus("出错");
   } finally {
     busy = false;
