@@ -52,6 +52,12 @@ pwsh -F install.ps1 --Device <CU126|CU128|CPU> --Source <HF|HF-Mirror|ModelScope
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126|CU128|CPU> -Source <HF|HF-Mirror|ModelScope>
 ```
 
+更推荐加上 `-NoProfile`，避免 PowerShell 启动时加载用户配置，导致 conda 初始化脚本和 GPT-SoVITS 安装脚本里的函数名冲突：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126|CU128|CPU> -Source <HF|HF-Mirror|ModelScope>
+```
+
 也可以安装 PowerShell 7 后继续使用 `pwsh`：
 
 ```powershell
