@@ -1,0 +1,4 @@
+config/user_settings.json
+runtime/
+__pycache__/
+*.pyc

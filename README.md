@@ -124,6 +124,48 @@ requirements.txt
 
 但安装时仍建议先激活 `GPTSoVits` 环境。
 
+## 启动网页版聊天
+
+本项目提供一个本地 Web 页面，用于串联：
+
+```text
+浏览器录音 -> GPT-SoVITS/tools/asr 转写 -> OpenAI 兼容聊天接口 -> GPT-SoVITS API 合成语音
+```
+
+先启动 GPT-SoVITS API：
+
+```powershell
+.\start_gsv_api.ps1
+```
+
+再打开另一个 PowerShell，启动本项目 Web 服务：
+
+```powershell
+.\start_web.ps1
+```
+
+然后访问：
+
+```text
+http://127.0.0.1:7860
+```
+
+网页右侧可以填写并保存：
+
+- OpenAI API Key、Base URL、模型名和 System Prompt。
+- GSV API 地址。
+- 训练后的 GPT 权重路径和 SoVITS 权重路径。
+- 参考音频路径、参考文本、参考语种和输出语种。
+- ASR 语言。
+
+这些设置会保存到本地：
+
+```text
+config/user_settings.json
+```
+
+该文件包含 API Key 等个人配置，已被 `.gitignore` 忽略，不应提交到仓库。
+
 ## 参考
 
 - GPT-SoVITS 官方仓库：[RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)

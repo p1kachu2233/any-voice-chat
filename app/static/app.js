@@ -1,0 +1,237 @@
+const form = document.querySelector("#settingsForm");
+const statusText = document.querySelector("#statusText");
+const messages = document.querySelector("#messages");
+const chatForm = document.querySelector("#chatForm");
+const messageInput = document.querySelector("#messageInput");
+const recordButton = document.querySelector("#recordButton");
+const recordIcon = document.querySelector("#recordIcon");
+const replyAudio = document.querySelector("#replyAudio");
+
+let settings = {};
+let history = [];
+let recorder = null;
+let chunks = [];
+let busy = false;
+
+const numericFields = new Set([
+  "openai_temperature",
+  "top_k",
+  "top_p",
+  "tts_temperature",
+  "speed_factor",
+  "streaming_mode",
+]);
+
+function setStatus(text) {
+  statusText.textContent = text;
+}
+
+function showEmpty() {
+  if (messages.children.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "开始一次语音或文字聊天";
+    messages.appendChild(empty);
+  }
+}
+
+function clearEmpty() {
+  const empty = messages.querySelector(".empty");
+  if (empty) empty.remove();
+}
+
+function appendMessage(role, content, audioUrl = null) {
+  clearEmpty();
+  const item = document.createElement("div");
+  item.className = `message ${role}`;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = content;
+  item.appendChild(bubble);
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight;
+
+  if (audioUrl) {
+    replyAudio.src = audioUrl;
+    replyAudio.play().catch(() => {});
+  }
+}
+
+function readForm() {
+  const data = {};
+  new FormData(form).forEach((value, key) => {
+    data[key] = numericFields.has(key) ? Number(value) : value;
+  });
+  return data;
+}
+
+function fillForm(data) {
+  for (const [key, value] of Object.entries(data)) {
+    const field = form.elements[key];
+    if (field) field.value = value ?? "";
+  }
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  if (!response.ok) {
+    const detail = payload.detail || payload.message || payload;
+    throw new Error(detail);
+  }
+  return payload;
+}
+
+async function loadSettings() {
+  settings = await requestJson("/api/settings");
+  fillForm(settings);
+  showEmpty();
+}
+
+async function saveSettings() {
+  settings = await requestJson("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings: readForm() }),
+  });
+  fillForm(settings);
+  setStatus("设置已保存");
+}
+
+async function runChat(userText) {
+  if (busy) return;
+  const text = userText.trim();
+  if (!text) return;
+
+  busy = true;
+  setStatus("思考中");
+  appendMessage("user", text);
+  messageInput.value = "";
+
+  try {
+    const result = await requestJson("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, history, speak: true }),
+    });
+    history.push({ role: "user", content: result.user_text });
+    history.push({ role: "assistant", content: result.assistant_text });
+    appendMessage("assistant", result.assistant_text, result.audio_url);
+    setStatus("完成");
+  } catch (error) {
+    appendMessage("assistant", `出错：${error.message}`);
+    setStatus("出错");
+  } finally {
+    busy = false;
+  }
+}
+
+function chooseMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""];
+  return candidates.find((type) => !type || MediaRecorder.isTypeSupported(type)) || "";
+}
+
+async function startRecording() {
+  if (busy) return;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  chunks = [];
+  const mimeType = chooseMimeType();
+  recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  };
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    recordButton.classList.remove("recording");
+    recordIcon.textContent = "●";
+    await transcribeAndChat(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+  };
+  recorder.start();
+  recordButton.classList.add("recording");
+  recordIcon.textContent = "■";
+  setStatus("录音中");
+}
+
+function stopRecording() {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+}
+
+async function transcribeAndChat(blob) {
+  if (busy) return;
+  busy = true;
+  setStatus("识别中");
+  try {
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+    const asr = await requestJson(`/api/asr?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}`, {
+      method: "POST",
+      body: formData,
+    });
+    busy = false;
+    await runChat(asr.text || "");
+  } catch (error) {
+    appendMessage("assistant", `出错：${error.message}`);
+    setStatus("出错");
+    busy = false;
+  }
+}
+
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add("active");
+  });
+});
+
+document.querySelector("#saveSettings").addEventListener("click", () => {
+  saveSettings().catch((error) => setStatus(`保存失败：${error.message}`));
+});
+
+document.querySelector("#checkGsv").addEventListener("click", async () => {
+  try {
+    await saveSettings();
+    const health = await requestJson("/api/health");
+    setStatus(health.gsv.ok ? "GSV 已连接" : `GSV 未连接：${health.gsv.error || health.gsv.status_code}`);
+  } catch (error) {
+    setStatus(`检查失败：${error.message}`);
+  }
+});
+
+document.querySelector("#applyModels").addEventListener("click", async () => {
+  try {
+    const current = readForm();
+    await requestJson("/api/gsv/apply-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: current }),
+    });
+    settings = current;
+    setStatus("GSV 模型已应用");
+  } catch (error) {
+    setStatus(`应用失败：${error.message}`);
+  }
+});
+
+chatForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runChat(messageInput.value);
+});
+
+recordButton.addEventListener("click", () => {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("浏览器不支持录音");
+    return;
+  }
+  if (recorder && recorder.state === "recording") {
+    stopRecording();
+  } else {
+    startRecording().catch((error) => setStatus(`录音失败：${error.message}`));
+  }
+});
+
+loadSettings().catch((error) => setStatus(`加载设置失败：${error.message}`));

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Any Voice Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="chat-pane">
+        <header class="topbar">
+          <div>
+            <h1>Any Voice Chat</h1>
+            <p>ASR -> OpenAI -> GPT-SoVITS</p>
+          </div>
+          <div class="status" id="statusText">待机</div>
+        </header>
+
+        <section class="messages" id="messages"></section>
+
+        <form class="composer" id="chatForm">
+          <button class="icon-button record" type="button" id="recordButton" title="开始/停止录音">
+            <span id="recordIcon">●</span>
+          </button>
+          <input id="messageInput" autocomplete="off" placeholder="输入文字，或点击左侧录音" />
+          <button class="send-button" type="submit">发送</button>
+        </form>
+
+        <audio id="replyAudio" controls></audio>
+      </section>
+
+      <aside class="settings-pane">
+        <div class="settings-head">
+          <h2>设置</h2>
+          <button type="button" id="saveSettings">保存</button>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="openai" type="button">OpenAI</button>
+          <button class="tab" data-tab="gsv" type="button">GSV</button>
+          <button class="tab" data-tab="asr" type="button">ASR</button>
+        </div>
+
+        <form class="settings-form" id="settingsForm">
+          <section class="tab-panel active" data-panel="openai">
+            <label>
+              API Key
+              <input name="openai_api_key" type="password" autocomplete="off" />
+            </label>
+            <label>
+              Base URL
+              <input name="openai_base_url" />
+            </label>
+            <label>
+              Model
+              <input name="openai_model" />
+            </label>
+            <label>
+              Temperature
+              <input name="openai_temperature" type="number" min="0" max="2" step="0.1" />
+            </label>
+            <label>
+              System Prompt
+              <textarea name="system_prompt" rows="5"></textarea>
+            </label>
+          </section>
+
+          <section class="tab-panel" data-panel="gsv">
+            <label>
+              GSV API URL
+              <input name="gsv_api_url" />
+            </label>
+            <div class="inline-actions">
+              <button type="button" id="checkGsv">检查连接</button>
+              <button type="button" id="applyModels">应用模型</button>
+            </div>
+            <label>
+              GPT 权重路径
+              <input name="gpt_weights_path" placeholder="如 GPT_SoVITS/.../*.ckpt" />
+            </label>
+            <label>
+              SoVITS 权重路径
+              <input name="sovits_weights_path" placeholder="如 GPT_SoVITS/.../*.pth" />
+            </label>
+            <label>
+              参考音频路径
+              <input name="ref_audio_path" />
+            </label>
+            <label>
+              辅助参考音频路径
+              <textarea name="aux_ref_audio_paths" rows="3" placeholder="一行一个路径"></textarea>
+            </label>
+            <label>
+              参考音频文本
+              <textarea name="prompt_text" rows="3"></textarea>
+            </label>
+            <div class="grid-2">
+              <label>
+                参考语种
+                <select name="prompt_lang">
+                  <option value="zh">zh</option>
+                  <option value="en">en</option>
+                  <option value="ja">ja</option>
+                  <option value="ko">ko</option>
+                  <option value="yue">yue</option>
+                </select>
+              </label>
+              <label>
+                输出语种
+                <select name="text_lang">
+                  <option value="zh">zh</option>
+                  <option value="en">en</option>
+                  <option value="ja">ja</option>
+                  <option value="ko">ko</option>
+                  <option value="yue">yue</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid-2">
+              <label>
+                切分方式
+                <input name="text_split_method" />
+              </label>
+              <label>
+                音频格式
+                <select name="media_type">
+                  <option value="wav">wav</option>
+                  <option value="ogg">ogg</option>
+                  <option value="aac">aac</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid-2">
+              <label>
+                top_k
+                <input name="top_k" type="number" min="1" step="1" />
+              </label>
+              <label>
+                top_p
+                <input name="top_p" type="number" min="0" max="1" step="0.05" />
+              </label>
+              <label>
+                TTS Temperature
+                <input name="tts_temperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+              <label>
+                Speed
+                <input name="speed_factor" type="number" min="0.5" max="2" step="0.05" />
+              </label>
+            </div>
+            <label>
+              Streaming Mode
+              <select name="streaming_mode">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+          </section>
+
+          <section class="tab-panel" data-panel="asr">
+            <label>
+              ASR 语言
+              <select name="asr_language">
+                <option value="zh">中文 zh</option>
+                <option value="yue">粤语 yue</option>
+              </select>
+            </label>
+          </section>
+        </form>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -15,8 +15,13 @@
 ## 代码结构
 
 - `GPT-SoVITS/`：通过 git submodule 引入的上游 GPT-SoVITS 项目。
+- `app/`：本项目的 FastAPI Web 应用，负责网页、设置保存、ASR、OpenAI 聊天请求和 GSV TTS 代理。
+- `config/user_settings.json`：网页保存的本地用户配置，包含 API Key，不提交。
+- `runtime/`：上传音频和生成语音的运行时目录，不提交。
 - `README.md`：面向使用者的项目说明和环境配置步骤。
 - `AGENTS.md`：面向 Codex/Agent 的协作规则和项目上下文。
+- `start_web.ps1`：使用 `GPTSoVits` conda 环境启动本项目 Web 服务。
+- `start_gsv_api.ps1`：使用 `GPTSoVits` conda 环境启动 GPT-SoVITS API。
 
 ## Conda 环境约定
 
@@ -41,6 +46,34 @@ conda run -n GPTSoVits <command>
 ```
 
 不要随意创建新的 Python 虚拟环境，除非用户明确要求。
+
+## Web 应用约定
+
+本项目的网页聊天链路为：
+
+```text
+浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions -> GPT-SoVITS API /tts -> 浏览器播放
+```
+
+后端使用 FastAPI，入口为：
+
+```powershell
+conda run -n GPTSoVits python -m uvicorn app.main:app --host 127.0.0.1 --port 7860
+```
+
+优先通过以下脚本启动：
+
+```powershell
+.\start_web.ps1
+```
+
+GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供，优先通过以下脚本启动：
+
+```powershell
+.\start_gsv_api.ps1
+```
+
+网页中的配置保存到 `config/user_settings.json`。该文件包含 OpenAI API Key 等个人信息，必须保持 git ignored。新增配置项时，需要同步更新默认配置、前端表单和 README。
 
 ## GPT-SoVITS 安装注意事项
 

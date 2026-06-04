@@ -1,0 +1,278 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7f8;
+  --panel: #ffffff;
+  --line: #d9e0e4;
+  --text: #172026;
+  --muted: #65737e;
+  --accent: #0f766e;
+  --accent-strong: #0b5f59;
+  --danger: #b42318;
+  --bubble-user: #e7f2ef;
+  --bubble-assistant: #f0f2f4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 1px;
+  width: 100vw;
+  height: 100vh;
+  background: var(--line);
+}
+
+.chat-pane,
+.settings-pane {
+  min-width: 0;
+  background: var(--panel);
+}
+
+.chat-pane {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+.topbar p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.messages {
+  overflow-y: auto;
+  padding: 22px;
+}
+
+.empty {
+  color: var(--muted);
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.message {
+  display: flex;
+  margin-bottom: 14px;
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: min(720px, 82%);
+  padding: 12px 14px;
+  border-radius: 8px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.user .bubble {
+  background: var(--bubble-user);
+}
+
+.assistant .bubble {
+  background: var(--bubble-assistant);
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 76px;
+  gap: 10px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.composer input,
+.settings-form input,
+.settings-form select,
+.settings-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--text);
+}
+
+.settings-form textarea {
+  resize: vertical;
+}
+
+.icon-button {
+  padding: 0;
+  width: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--danger);
+}
+
+.icon-button.recording {
+  background: #fff1f0;
+  border-color: var(--danger);
+}
+
+.send-button,
+.settings-head button,
+.inline-actions button:first-child {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.send-button:hover,
+.settings-head button:hover,
+.inline-actions button:first-child:hover {
+  background: var(--accent-strong);
+}
+
+#replyAudio {
+  width: calc(100% - 36px);
+  margin: 0 18px 16px;
+  height: 38px;
+}
+
+.settings-pane {
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 18px 0;
+}
+
+.tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.settings-form label {
+  display: block;
+  margin-bottom: 13px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-form input,
+.settings-form select,
+.settings-form textarea {
+  margin-top: 5px;
+  color: var(--text);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.inline-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(520px, 1fr) auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .settings-pane {
+    border-top: 1px solid var(--line);
+  }
+}
