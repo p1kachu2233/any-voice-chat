@@ -1,0 +1,87 @@
+# AGENTS.md
+
+本文件记录本项目中 Codex/Agent 工作时必须遵守的上下文、环境约定和需求维护规则。需求或项目方向发生变化时，需要同步更新本文件。
+
+## 项目目标
+
+本项目是基于 `RVC-Boss/GPT-SoVITS` 构建的语音聊天项目，目标链路为：
+
+```text
+语音输入 -> ASR/识别 -> 大模型思考 -> 文本输出 -> TTS/声线克隆 -> 语音输出
+```
+
+当前阶段的重点是先完成 GPT-SoVITS/GSV 环境配置，并在此基础上继续开发语音聊天主流程。
+
+## 代码结构
+
+- `GPT-SoVITS/`：通过 git submodule 引入的上游 GPT-SoVITS 项目。
+- `README.md`：面向使用者的项目说明和环境配置步骤。
+- `AGENTS.md`：面向 Codex/Agent 的协作规则和项目上下文。
+
+## Conda 环境约定
+
+用户已经创建并使用以下 conda 环境：
+
+```powershell
+GPTSoVits
+```
+
+之后执行本项目相关 Python 命令、安装依赖、运行脚本、调试 ASR/LLM/TTS 流程时，默认必须使用这个 conda 环境。
+
+在交互式 PowerShell 中优先使用：
+
+```powershell
+conda activate GPTSoVits
+```
+
+在 Codex/Agent 的非交互式命令中，如果需要确保环境生效，优先使用：
+
+```powershell
+conda run -n GPTSoVits <command>
+```
+
+不要随意创建新的 Python 虚拟环境，除非用户明确要求。
+
+## GPT-SoVITS 安装注意事项
+
+GPT-SoVITS 安装脚本位于：
+
+```text
+GPT-SoVITS/install.ps1
+```
+
+Windows 下如果没有安装 PowerShell 7，`pwsh` 命令可能不可用。已验证可使用 Windows PowerShell 执行：
+
+```powershell
+cd .\GPT-SoVITS
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device CU126 -Source ModelScope
+```
+
+其中 `-NoProfile` 用于避免 PowerShell 用户配置中的 conda 初始化脚本与 GPT-SoVITS 安装脚本里的函数名冲突。
+
+## 子模块与生成文件
+
+`GPT-SoVITS/` 是子模块。除非任务明确要求修改上游代码，否则不要随意编辑或提交子模块内部文件。
+
+安装 GPT-SoVITS 后，子模块目录内可能出现模型、缓存、依赖产物或未跟踪文件。主仓库中看到类似以下状态通常是正常的：
+
+```text
+ ? GPT-SoVITS
+```
+
+不要把模型权重、缓存、临时输出等大文件提交进主仓库。
+
+## 需求维护规则
+
+当用户提出新的长期约定、项目目标、目录结构、运行环境、依赖策略或工作流变化时，需要同步更新：
+
+- `AGENTS.md`：记录 Agent 后续执行任务时必须记住的规则。
+- `README.md`：如果变化会影响用户安装、运行或理解项目，也同步更新。
+
+提交代码前应检查：
+
+```powershell
+git status --short --branch
+```
+
+只提交与当前需求相关的文件，避免把 GPT-SoVITS 子模块内部安装产物一起提交。
