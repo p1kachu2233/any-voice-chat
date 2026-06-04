@@ -51,7 +51,7 @@ conda run -n GPTSoVits <command>
 本项目的网页聊天链路为：
 
 ```text
-浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions 流式输出 -> GPT-SoVITS API /tts 分段合成 -> 浏览器排队播放
+浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions 流式输出 -> GPT-SoVITS API /tts 分段合成 -> 内存音频返回浏览器排队播放
 ```
 
 后端使用 FastAPI，入口为：

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import re
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.asr_service import convert_to_wav, save_upload, transcribe_audio
-from app.gsv_client import apply_gsv_models, synthesize
+from app.gsv_client import apply_gsv_models, synthesize, synthesize_bytes
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.log_store import APP_LOG_PATH, log_exception, read_tail
 from app.openai_client import chat_completion, stream_chat_completion
@@ -90,12 +91,13 @@ def _iter_completed_audio(audio_queue: queue.Queue):
 def _submit_tts(executor: ThreadPoolExecutor, audio_queue: queue.Queue, settings: dict[str, Any], segment: str) -> None:
     def worker():
         try:
-            audio_path = synthesize(settings, segment)
+            audio = synthesize_bytes(settings, segment)
             audio_queue.put(
                 {
                     "event": "audio",
                     "text": segment,
-                    "audio_url": f"/api/audio/{audio_path.name}",
+                    "media_type": audio.media_type,
+                    "audio_base64": base64.b64encode(audio.content).decode("ascii"),
                 }
             )
         except Exception as exc:

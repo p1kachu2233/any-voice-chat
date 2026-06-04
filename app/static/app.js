@@ -14,6 +14,7 @@ let chunks = [];
 let busy = false;
 let audioQueue = [];
 let audioPlaying = false;
+let currentObjectUrl = null;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -71,7 +72,21 @@ function createStreamingMessage(role) {
   return bubble;
 }
 
-function enqueueAudio(audioUrl) {
+function audioUrlFromEvent(event) {
+  if (event.audio_url) return event.audio_url;
+  if (!event.audio_base64) return null;
+  const binary = atob(event.audio_base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const mediaType = event.media_type || "wav";
+  const blob = new Blob([bytes], { type: `audio/${mediaType}` });
+  return URL.createObjectURL(blob);
+}
+
+function enqueueAudio(event) {
+  const audioUrl = typeof event === "string" ? event : audioUrlFromEvent(event);
   if (!audioUrl) return;
   audioQueue.push(audioUrl);
   playNextAudio();
@@ -80,14 +95,20 @@ function enqueueAudio(audioUrl) {
 function playNextAudio() {
   if (audioPlaying || audioQueue.length === 0) return;
   audioPlaying = true;
-  replyAudio.src = audioQueue.shift();
+  const nextUrl = audioQueue.shift();
+  currentObjectUrl = nextUrl.startsWith("blob:") ? nextUrl : null;
+  replyAudio.src = nextUrl;
   replyAudio.play().catch(() => {
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
     audioPlaying = false;
     playNextAudio();
   });
 }
 
 replyAudio.addEventListener("ended", () => {
+  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+  currentObjectUrl = null;
   audioPlaying = false;
   playNextAudio();
 });
@@ -174,7 +195,7 @@ async function runChat(userText) {
           assistantBubble.textContent = assistantText;
           messages.scrollTop = messages.scrollHeight;
         } else if (event.event === "audio") {
-          enqueueAudio(event.audio_url);
+          enqueueAudio(event);
           setStatus("播放语音中");
         } else if (event.event === "audio_error") {
           setStatus(`分段合成失败：${event.message}`);

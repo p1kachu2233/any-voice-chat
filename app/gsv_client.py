@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import requests
 
@@ -13,6 +13,11 @@ OUTPUT_DIR = ROOT_DIR / "runtime" / "outputs"
 
 _model_lock = threading.Lock()
 _last_applied: dict[str, str] = {"gpt_weights_path": "", "sovits_weights_path": ""}
+
+
+class SynthesizedAudio(NamedTuple):
+    content: bytes
+    media_type: str
 
 
 def _base_url(settings: dict[str, Any]) -> str:
@@ -71,7 +76,7 @@ def sanitize_tts_text(text: str) -> str:
     return (text or "").strip()
 
 
-def synthesize(settings: dict[str, Any], text: str) -> Path:
+def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
     ref_audio_path = (settings.get("ref_audio_path") or "").strip()
     prompt_lang = (settings.get("prompt_lang") or "").strip()
     text_lang = (settings.get("text_lang") or "").strip()
@@ -115,7 +120,12 @@ def synthesize(settings: dict[str, Any], text: str) -> Path:
         raise RuntimeError(f"GSV 语音合成失败：{response.text}")
 
     media_type = payload["media_type"]
+    return SynthesizedAudio(content=response.content, media_type=media_type)
+
+
+def synthesize(settings: dict[str, Any], text: str) -> Path:
+    audio = synthesize_bytes(settings, text)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.{media_type}"
-    output_path.write_bytes(response.content)
+    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.{audio.media_type}"
+    output_path.write_bytes(audio.content)
     return output_path
