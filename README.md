@@ -46,6 +46,18 @@ conda activate GPTSoVits
 pwsh -F install.ps1 --Device <CU126|CU128|CPU> --Source <HF|HF-Mirror|ModelScope> [--DownloadUVR5]
 ```
 
+如果本机没有安装 PowerShell 7，执行 `pwsh` 时会提示“无法将 pwsh 项识别为 cmdlet”。这时可以先用 Windows 自带的 PowerShell 执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126|CU128|CPU> -Source <HF|HF-Mirror|ModelScope>
+```
+
+也可以安装 PowerShell 7 后继续使用 `pwsh`：
+
+```powershell
+winget install --id Microsoft.PowerShell --source winget
+```
+
 参数说明：
 
 - `--Device CU126`：使用 CUDA 12.6。
