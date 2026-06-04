@@ -68,6 +68,8 @@ python start.py --with-gsv
 
 GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧 GSV 设置区的 `启动 GSV` 按钮通过后端接口拉起，不再要求用户单独手动启动 `api_v2.py`。
 
+`检查 GSV` 必须使用 GSV 专属接口 `/control` 探测，不要只检查 `/docs`，否则可能把旧进程、半死进程或其它 FastAPI 服务误判为 GSV 已连接。`应用模型` 不重启服务，只调用 `/set_gpt_weights` 和 `/set_sovits_weights` 在运行中的 GSV 进程里切换权重。
+
 网页中的配置保存到 `config/user_settings.json`。该文件包含 OpenAI API Key 等个人信息，必须保持 git ignored。新增配置项时，需要同步更新默认配置、前端表单和 README。
 
 默认 GSV 参考音频路径为 `D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav`，默认参考文本为 `新华社的朋友们大家好，我是鞠婧祎`。

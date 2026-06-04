@@ -71,7 +71,7 @@
 
           <section class="tab-panel" data-panel="gsv">
             <div class="hint">
-              `启动 GSV` 会在后台启动 GPT-SoVITS API。`应用模型` 会把下方 GPT/SoVITS 权重路径发送给 GSV，让本次合成使用指定训练模型。
+              `启动 GSV` 会在后台启动 GPT-SoVITS API。`应用模型` 不会重启服务，只会把下方 GPT/SoVITS 权重路径发送给已运行的 GSV，让它重新加载指定训练模型；未填写权重路径时不会切换模型。
             </div>
             <label>
               GSV API URL

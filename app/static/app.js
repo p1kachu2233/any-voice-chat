@@ -276,7 +276,7 @@ document.querySelector("#checkGsv").addEventListener("click", async () => {
     await saveSettings(false);
     const health = await requestJson("/api/health");
     const gsv = health.gsv.health || {};
-    setStatus(gsv.ok ? "GSV 已连接" : `GSV 未连接：${gsv.error || gsv.status_code || "未知状态"}`);
+    setStatus(gsv.ok ? `GSV 已连接：${gsv.service || gsv.url || ""}` : `GSV 未连接：${gsv.error || gsv.message || gsv.status_code || "未知状态"}`);
   } catch (error) {
     setStatus(`检查失败：${error.message}`);
   }
@@ -310,13 +310,14 @@ document.querySelector("#stopGsv").addEventListener("click", async () => {
 document.querySelector("#applyModels").addEventListener("click", async () => {
   try {
     const current = readForm();
-    await requestJson("/api/gsv/apply-models", {
+    const result = await requestJson("/api/gsv/apply-models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ settings: current }),
     });
     settings = current;
-    setStatus("GSV 模型已应用");
+    const applied = (result.applied || []).map((item) => item.model).join(" / ");
+    setStatus(applied ? `GSV 模型已应用：${applied}` : "没有填写权重路径，未切换模型");
   } catch (error) {
     setStatus(`应用失败：${error.message}`);
   }

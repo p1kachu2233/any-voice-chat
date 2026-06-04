@@ -154,11 +154,11 @@ def stop_gsv():
 def apply_models(payload: SettingsPayload | None = None):
     settings = save_settings(payload.settings) if payload else load_settings()
     try:
-        apply_gsv_models(settings, force=True)
+        result = apply_gsv_models(settings, force=True)
     except Exception as exc:
         log_exception("gsv.apply_models", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True}
+    return {"ok": True, **result}
 
 
 @app.post("/api/asr")

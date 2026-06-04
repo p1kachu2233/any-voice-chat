@@ -20,14 +20,30 @@ def _base_url(settings: dict[str, Any]) -> str:
 
 
 def check_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
+    base = _base_url(settings)
     try:
-        response = requests.get(f"{_base_url(settings)}/docs", timeout=3)
-        return {"ok": response.status_code < 500, "status_code": response.status_code}
+        response = requests.get(f"{base}/control", timeout=3)
     except requests.RequestException as exc:
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "url": base, "error": str(exc)}
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    if response.status_code == 400 and payload.get("message") == "command is required":
+        return {"ok": True, "url": base, "status_code": response.status_code, "service": "GPT-SoVITS API"}
+
+    return {
+        "ok": False,
+        "url": base,
+        "status_code": response.status_code,
+        "message": payload.get("message") if isinstance(payload, dict) else response.text[:200],
+    }
 
 
-def apply_gsv_models(settings: dict[str, Any], force: bool = False) -> None:
+def apply_gsv_models(settings: dict[str, Any], force: bool = False) -> dict[str, Any]:
+    result: dict[str, Any] = {"applied": [], "skipped": []}
     with _model_lock:
         base = _base_url(settings)
         model_calls = [
@@ -37,13 +53,17 @@ def apply_gsv_models(settings: dict[str, Any], force: bool = False) -> None:
         for key, endpoint, label in model_calls:
             path = (settings.get(key) or "").strip()
             if not path:
+                result["skipped"].append({"model": label, "reason": "empty_path"})
                 continue
             if not force and _last_applied.get(key) == path:
+                result["skipped"].append({"model": label, "reason": "already_applied", "path": path})
                 continue
             response = requests.get(f"{base}/{endpoint}", params={"weights_path": path}, timeout=180)
             if response.status_code >= 400:
                 raise RuntimeError(f"{label} 模型切换失败：{response.text}")
             _last_applied[key] = path
+            result["applied"].append({"model": label, "path": path})
+    return result
 
 
 def sanitize_tts_text(text: str) -> str:

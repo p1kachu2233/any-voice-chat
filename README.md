@@ -161,7 +161,7 @@ python start.py --with-gsv
 
 - OpenAI API Key、Base URL、模型名和 System Prompt。
 - GSV API 地址，并可从页面启动或检查 GSV API。
-- 训练后的 GPT 权重路径和 SoVITS 权重路径。
+- 训练后的 GPT 权重路径和 SoVITS 权重路径。点击 `应用模型` 不会重启 GSV，只会让已运行的 GSV 重新加载填写的权重路径；未填写时不会切换。
 - 参考音频路径、参考文本、参考语种和输出语种。
 - ASR 语言。
 
