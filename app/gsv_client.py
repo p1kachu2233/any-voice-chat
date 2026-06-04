@@ -21,7 +21,7 @@ def _base_url(settings: dict[str, Any]) -> str:
 
 def check_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
     try:
-        response = requests.get(f"{_base_url(settings)}/", timeout=3)
+        response = requests.get(f"{_base_url(settings)}/docs", timeout=3)
         return {"ok": response.status_code < 500, "status_code": response.status_code}
     except requests.RequestException as exc:
         return {"ok": False, "error": str(exc)}

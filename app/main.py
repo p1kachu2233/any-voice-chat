@@ -9,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.asr_service import convert_to_wav, save_upload, transcribe_audio
-from app.gsv_client import apply_gsv_models, check_gsv_api, synthesize
+from app.gsv_client import apply_gsv_models, synthesize
+from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.openai_client import chat_completion
 from app.settings import ROOT_DIR, load_settings, save_settings
 
@@ -53,7 +54,24 @@ def update_settings(payload: SettingsPayload):
 @app.get("/api/health")
 def health():
     settings = load_settings()
-    return {"gsv": check_gsv_api(settings)}
+    return {"gsv": gsv_process_status(settings)}
+
+
+@app.post("/api/gsv/start")
+def start_gsv(payload: SettingsPayload | None = None):
+    settings = save_settings(payload.settings) if payload else load_settings()
+    try:
+        result = start_gsv_api(settings)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/api/gsv/stop")
+def stop_gsv():
+    return stop_gsv_api()
 
 
 @app.post("/api/gsv/apply-models")

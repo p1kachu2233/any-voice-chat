@@ -20,8 +20,7 @@
 - `runtime/`：上传音频和生成语音的运行时目录，不提交。
 - `README.md`：面向使用者的项目说明和环境配置步骤。
 - `AGENTS.md`：面向 Codex/Agent 的协作规则和项目上下文。
-- `start_web.ps1`：使用 `GPTSoVits` conda 环境启动本项目 Web 服务。
-- `start_gsv_api.ps1`：使用 `GPTSoVits` conda 环境启动 GPT-SoVITS API。
+- `start.py`：唯一启动入口。用户激活 `GPTSoVits` 后执行 `python start.py` 启动网页；网页内可启动 GSV API。
 
 ## Conda 环境约定
 
@@ -58,20 +57,16 @@ conda run -n GPTSoVits <command>
 后端使用 FastAPI，入口为：
 
 ```powershell
-conda run -n GPTSoVits python -m uvicorn app.main:app --host 127.0.0.1 --port 7860
+python start.py
 ```
 
-优先通过以下脚本启动：
+如果需要启动网页时同时启动 GSV API：
 
 ```powershell
-.\start_web.ps1
+python start.py --with-gsv
 ```
 
-GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供，优先通过以下脚本启动：
-
-```powershell
-.\start_gsv_api.ps1
-```
+GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧 GSV 设置区的 `启动 GSV` 按钮通过后端接口拉起，不再要求用户单独手动启动 `api_v2.py`。
 
 网页中的配置保存到 `config/user_settings.json`。该文件包含 OpenAI API Key 等个人信息，必须保持 git ignored。新增配置项时，需要同步更新默认配置、前端表单和 README。
 

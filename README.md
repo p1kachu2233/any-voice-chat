@@ -132,16 +132,11 @@ requirements.txt
 浏览器录音 -> GPT-SoVITS/tools/asr 转写 -> OpenAI 兼容聊天接口 -> GPT-SoVITS API 合成语音
 ```
 
-先启动 GPT-SoVITS API：
+激活 conda 环境后，使用一个 Python 命令启动本项目：
 
 ```powershell
-.\start_gsv_api.ps1
-```
-
-再打开另一个 PowerShell，启动本项目 Web 服务：
-
-```powershell
-.\start_web.ps1
+conda activate GPTSoVits
+python start.py
 ```
 
 然后访问：
@@ -150,10 +145,22 @@ requirements.txt
 http://127.0.0.1:7860
 ```
 
+网页右侧的 GSV 设置区提供 `启动 GSV` 按钮，会在后台启动：
+
+```text
+GPT-SoVITS/api_v2.py
+```
+
+如果希望启动网页时顺手启动 GSV API，可以执行：
+
+```powershell
+python start.py --with-gsv
+```
+
 网页右侧可以填写并保存：
 
 - OpenAI API Key、Base URL、模型名和 System Prompt。
-- GSV API 地址。
+- GSV API 地址，并可从页面启动或检查 GSV API。
 - 训练后的 GPT 权重路径和 SoVITS 权重路径。
 - 参考音频路径、参考文本、参考语种和输出语种。
 - ASR 语言。

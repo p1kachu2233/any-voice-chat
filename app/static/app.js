@@ -196,9 +196,35 @@ document.querySelector("#checkGsv").addEventListener("click", async () => {
   try {
     await saveSettings();
     const health = await requestJson("/api/health");
-    setStatus(health.gsv.ok ? "GSV 已连接" : `GSV 未连接：${health.gsv.error || health.gsv.status_code}`);
+    const gsv = health.gsv.health || {};
+    setStatus(gsv.ok ? "GSV 已连接" : `GSV 未连接：${gsv.error || gsv.status_code || "未知状态"}`);
   } catch (error) {
     setStatus(`检查失败：${error.message}`);
+  }
+});
+
+document.querySelector("#startGsv").addEventListener("click", async () => {
+  try {
+    setStatus("正在启动 GSV");
+    const current = readForm();
+    const result = await requestJson("/api/gsv/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: current }),
+    });
+    settings = current;
+    setStatus(result.already_running ? "GSV 已在运行" : "GSV 已启动");
+  } catch (error) {
+    setStatus(`启动失败：${error.message}`);
+  }
+});
+
+document.querySelector("#stopGsv").addEventListener("click", async () => {
+  try {
+    const result = await requestJson("/api/gsv/stop", { method: "POST" });
+    setStatus(result.stopped ? "GSV 已停止" : "没有由本页面启动的 GSV 进程");
+  } catch (error) {
+    setStatus(`停止失败：${error.message}`);
   }
 });
 
