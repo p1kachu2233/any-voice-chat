@@ -64,6 +64,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126
 winget install --id Microsoft.PowerShell --source winget
 ```
 
+### pyopenjtalk 构建失败
+
+如果安装过程中出现 `Failed to build 'pyopenjtalk'`、`nmake: no such file or directory`、`CMAKE_C_COMPILER not set` 或 `CMAKE_CXX_COMPILER not set`，说明当前 Windows 环境缺少 MSVC C/C++ 编译工具链。
+
+可以安装 Visual Studio 2022 Build Tools：
+
+```powershell
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+安装完成后重新打开 PowerShell，再执行：
+
+```powershell
+conda activate GPTSoVits
+cd D:\Users\13677\Documents\any-voice-chat\GPT-SoVITS
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device CU126 -Source ModelScope
+```
+
+如果使用 Visual Studio Installer 图形界面安装，请勾选 `Desktop development with C++`，并确保包含 MSVC 编译工具和 Windows SDK。
+
 参数说明：
 
 - `--Device CU126`：使用 CUDA 12.6。

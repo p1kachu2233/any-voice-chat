@@ -59,6 +59,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device CU126 
 
 其中 `-NoProfile` 用于避免 PowerShell 用户配置中的 conda 初始化脚本与 GPT-SoVITS 安装脚本里的函数名冲突。
 
+如果安装依赖时 `pyopenjtalk` 构建失败，并出现 `nmake: no such file or directory`、`CMAKE_C_COMPILER not set` 或 `CMAKE_CXX_COMPILER not set`，通常是 Windows 缺少 MSVC C/C++ 编译工具链。优先让用户安装 Visual Studio 2022 Build Tools 的 `Desktop development with C++` / `Microsoft.VisualStudio.Workload.VCTools`，然后重新打开 PowerShell，激活 `GPTSoVits` 环境后重跑安装脚本。
+
 ## 子模块与生成文件
 
 `GPT-SoVITS/` 是子模块。除非任务明确要求修改上游代码，否则不要随意编辑或提交子模块内部文件。
