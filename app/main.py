@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from app.asr_service import convert_to_wav, save_upload, transcribe_audio
 from app.gsv_client import apply_gsv_models, synthesize
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
+from app.log_store import APP_LOG_PATH, log_exception, read_tail
 from app.openai_client import chat_completion
 from app.settings import ROOT_DIR, load_settings, save_settings
 
@@ -41,6 +42,11 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/admin")
+def admin():
+    return FileResponse(STATIC_DIR / "admin.html")
+
+
 @app.get("/api/settings")
 def get_settings():
     return load_settings()
@@ -63,8 +69,10 @@ def start_gsv(payload: SettingsPayload | None = None):
     try:
         result = start_gsv_api(settings)
     except Exception as exc:
+        log_exception("gsv.start", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not result.get("ok"):
+        log_exception("gsv.start", RuntimeError(str(result)))
         raise HTTPException(status_code=400, detail=result)
     return result
 
@@ -80,6 +88,7 @@ def apply_models(payload: SettingsPayload | None = None):
     try:
         apply_gsv_models(settings, force=True)
     except Exception as exc:
+        log_exception("gsv.apply_models", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
 
@@ -91,6 +100,7 @@ async def asr(audio: UploadFile = File(...), language: str = "zh"):
         wav_path = convert_to_wav(raw_path)
         text = transcribe_audio(wav_path, language)
     except Exception as exc:
+        log_exception("asr", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"text": text}
 
@@ -108,6 +118,7 @@ def chat(payload: ChatPayload):
             audio_path = synthesize(settings, assistant_text)
             audio_url = f"/api/audio/{audio_path.name}"
     except Exception as exc:
+        log_exception("chat", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"user_text": user_text, "assistant_text": assistant_text, "audio_url": audio_url}
 
@@ -124,6 +135,7 @@ async def voice_chat(audio: UploadFile = File(...), language: str = "zh"):
         assistant_text = chat_completion(settings, user_text, [])
         audio_path = synthesize(settings, assistant_text)
     except Exception as exc:
+        log_exception("voice_chat", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "user_text": user_text,
@@ -141,6 +153,7 @@ def tts(payload: TtsPayload):
     try:
         audio_path = synthesize(settings, text)
     except Exception as exc:
+        log_exception("tts", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"audio_url": f"/api/audio/{audio_path.name}"}
 
@@ -151,3 +164,29 @@ def audio(filename: str):
     if not str(path).startswith(str(OUTPUT_DIR.resolve())) or not path.exists():
         raise HTTPException(status_code=404, detail="音频不存在")
     return FileResponse(path)
+
+
+@app.get("/api/admin/status")
+def admin_status():
+    settings = load_settings()
+    safe_settings = settings.copy()
+    if safe_settings.get("openai_api_key"):
+        safe_settings["openai_api_key"] = "已填写"
+    return {
+        "settings": safe_settings,
+        "gsv": gsv_process_status(settings),
+        "paths": {
+            "app_log": str(APP_LOG_PATH),
+            "runtime": str(ROOT_DIR / "runtime"),
+        },
+    }
+
+
+@app.get("/api/admin/logs")
+def admin_logs():
+    from app.gsv_process import GSV_LOG_PATH
+
+    return {
+        "app": read_tail(APP_LOG_PATH),
+        "gsv": read_tail(GSV_LOG_PATH),
+    }

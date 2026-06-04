@@ -101,12 +101,29 @@ h2 {
 }
 
 .status {
-  max-width: 42%;
+  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
   font-size: 13px;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
 }
 
 .messages {
@@ -244,6 +261,22 @@ h2 {
   font-size: 13px;
 }
 
+.settings-form span,
+.hint {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hint {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7faf9;
+  padding: 10px;
+  margin-bottom: 13px;
+}
+
 .settings-form input,
 .settings-form select,
 .settings-form textarea {
@@ -264,6 +297,72 @@ h2 {
   margin-bottom: 13px;
 }
 
+.admin-shell {
+  min-height: 100vh;
+  background: var(--bg);
+  padding: 22px;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-actions {
+  width: min(260px, 100%);
+  margin-bottom: 0;
+}
+
+.admin-actions a {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.admin-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.admin-panel h2 {
+  margin-bottom: 10px;
+}
+
+.admin-panel pre {
+  min-height: 160px;
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
@@ -274,5 +373,10 @@ h2 {
 
   .settings-pane {
     border-top: 1px solid var(--line);
+  }
+
+  .admin-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

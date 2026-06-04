@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Any Voice Chat 后台</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="admin-head">
+        <div>
+          <h1>后台</h1>
+          <p>服务状态、配置摘要和最近日志</p>
+        </div>
+        <div class="inline-actions admin-actions">
+          <button type="button" id="refreshAdmin">刷新</button>
+          <a href="/">返回聊天</a>
+        </div>
+      </header>
+
+      <section class="admin-grid">
+        <section class="admin-panel">
+          <h2>服务状态</h2>
+          <pre id="statusBox">加载中...</pre>
+        </section>
+        <section class="admin-panel">
+          <h2>应用日志</h2>
+          <pre id="appLogBox">加载中...</pre>
+        </section>
+        <section class="admin-panel">
+          <h2>GSV 日志</h2>
+          <pre id="gsvLogBox">加载中...</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/admin.js"></script>
+  </body>
+</html>

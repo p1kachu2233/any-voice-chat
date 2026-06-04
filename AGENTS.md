@@ -70,6 +70,10 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 
 网页中的配置保存到 `config/user_settings.json`。该文件包含 OpenAI API Key 等个人信息，必须保持 git ignored。新增配置项时，需要同步更新默认配置、前端表单和 README。
 
+默认 GSV 参考音频路径为 `D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav`，默认参考文本为 `新华社的朋友们大家好，我是鞠婧祎`。
+
+后台页面入口为 `/admin`，用于查看服务状态、应用日志和 GSV 日志。应用日志写入 `runtime/app.log`，GSV API 日志写入 `runtime/gsv_api.log`。用户反馈服务无响应或 GSV 报错时，优先查看后台页和这两个日志。
+
 ## GPT-SoVITS 安装注意事项
 
 GPT-SoVITS 安装脚本位于：

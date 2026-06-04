@@ -78,7 +78,7 @@ async function requestJson(url, options = {}) {
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
     const detail = payload.detail || payload.message || payload;
-    throw new Error(detail);
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail, null, 2));
   }
   return payload;
 }
@@ -89,14 +89,14 @@ async function loadSettings() {
   showEmpty();
 }
 
-async function saveSettings() {
+async function saveSettings(announce = true) {
   settings = await requestJson("/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ settings: readForm() }),
   });
   fillForm(settings);
-  setStatus("设置已保存");
+  if (announce) setStatus("设置已保存");
 }
 
 async function runChat(userText) {
@@ -194,7 +194,7 @@ document.querySelector("#saveSettings").addEventListener("click", () => {
 
 document.querySelector("#checkGsv").addEventListener("click", async () => {
   try {
-    await saveSettings();
+    await saveSettings(false);
     const health = await requestJson("/api/health");
     const gsv = health.gsv.health || {};
     setStatus(gsv.ok ? "GSV 已连接" : `GSV 未连接：${gsv.error || gsv.status_code || "未知状态"}`);

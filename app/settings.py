@@ -20,9 +20,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "gsv_api_url": "http://127.0.0.1:9880",
     "gpt_weights_path": "",
     "sovits_weights_path": "",
-    "ref_audio_path": "",
+    "ref_audio_path": r"D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav",
     "aux_ref_audio_paths": "",
-    "prompt_text": "",
+    "prompt_text": "新华社的朋友们大家好，我是鞠婧祎",
     "prompt_lang": "zh",
     "text_lang": "zh",
     "text_split_method": "cut5",
@@ -35,6 +35,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 _settings_lock = threading.Lock()
+DEFAULT_IF_EMPTY_KEYS = {"ref_audio_path", "prompt_text", "prompt_lang", "text_lang"}
 
 
 def _coerce_value(key: str, value: Any) -> Any:
@@ -61,6 +62,8 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
     for key in DEFAULT_SETTINGS:
         if key in values:
             settings[key] = _coerce_value(key, values[key])
+        if key in DEFAULT_IF_EMPTY_KEYS and settings[key] == "":
+            settings[key] = DEFAULT_SETTINGS[key]
     return settings
 
 
