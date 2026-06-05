@@ -9,6 +9,7 @@ import requests
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT_DIR / "runtime" / "outputs"
+VALID_TEXT_SPLIT_METHODS = {"cut0", "cut1", "cut2", "cut3", "cut4", "cut5"}
 
 class SynthesizedAudio(NamedTuple):
     content: bytes
@@ -72,6 +73,9 @@ def build_tts_payload(settings: dict[str, Any], text: str, force_streaming: bool
     text = sanitize_tts_text(text)
     if not text:
         raise ValueError("清洗后没有可用于语音合成的文本")
+    text_split_method = settings.get("text_split_method") or "cut5"
+    if text_split_method not in VALID_TEXT_SPLIT_METHODS:
+        raise ValueError(f"GSV 切分方式不支持：{text_split_method}")
 
     aux_paths = [
         item.strip()
@@ -88,7 +92,7 @@ def build_tts_payload(settings: dict[str, Any], text: str, force_streaming: bool
         "top_k": int(settings.get("top_k") or 15),
         "top_p": float(settings.get("top_p") or 1.0),
         "temperature": float(settings.get("tts_temperature") or 1.0),
-        "text_split_method": settings.get("text_split_method") or "cut5",
+        "text_split_method": text_split_method,
         "batch_size": 1,
         "speed_factor": float(settings.get("speed_factor") or 1.0),
         "media_type": "wav" if force_streaming else settings.get("media_type") or "wav",

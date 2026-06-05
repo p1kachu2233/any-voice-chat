@@ -242,8 +242,18 @@
 
             <div class="field-grid">
               <label class="field">
-                <span class="field-head"><span class="field-name">切分方式</span></span>
-                <input name="text_split_method" />
+                <span class="field-head">
+                  <span class="field-name">切分方式</span>
+                  <span class="help-icon" tabindex="0" data-tip="决定一段回复如何拆给 GSV 合成。默认 cut5 按常见标点切，适合大多数中文聊天；cut0 不切，长文本可能更慢也更容易不稳。" aria-label="决定一段回复如何拆给 GSV 合成。默认 cut5 按常见标点切，适合大多数中文聊天；cut0 不切，长文本可能更慢也更容易不稳。">i</span>
+                </span>
+                <select name="text_split_method">
+                  <option value="cut5">cut5 - 按常见标点切（推荐）</option>
+                  <option value="cut0">cut0 - 不切</option>
+                  <option value="cut1">cut1 - 凑四句一切</option>
+                  <option value="cut2">cut2 - 凑约 50 字一切</option>
+                  <option value="cut3">cut3 - 按中文句号。切</option>
+                  <option value="cut4">cut4 - 按英文句号.切</option>
+                </select>
               </label>
 
               <label class="field">
