@@ -9,19 +9,15 @@
 ## 获取项目
 
 ```powershell
-git clone --recurse-submodules https://github.com/<your-name>/any-voice-chat.git
+git clone https://github.com/<your-name>/any-voice-chat.git
 cd any-voice-chat
-```
-
-如果已经普通克隆过：
-
-```powershell
-git submodule update --init --recursive
 ```
 
 ## 推荐方式：使用 GPT-SoVITS 整合包
 
 推荐直接使用 GPT-SoVITS 整合包，不需要自己配置 conda 环境。
+
+整合包可以从 [GPT-SoVITS Releases](https://github.com/RVC-Boss/GPT-SoVITS/releases) 页面获取。
 
 把整合包解压后的内容放到本项目根目录下，并确保目录名是 `GPT-SoVITS`。如果整合包解压出来的文件夹名字不是 `GPT-SoVITS`，请先重命名。
 
@@ -82,6 +78,7 @@ cd "$env:CODEX_WORKTREE_PATH"
 如果你想按 GPT-SoVITS 官方方式安装，可以参考 [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 的说明，并使用 conda 环境：
 
 ```powershell
+git submodule update --init --recursive
 cd GPT-SoVITS
 conda create -n GPTSoVits python=3.10
 conda activate GPTSoVits
