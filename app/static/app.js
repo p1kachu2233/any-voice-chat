@@ -31,6 +31,7 @@ const numericFields = new Set([
   "speed_factor",
   "streaming_mode",
 ]);
+const checkboxFields = new Set(["enable_gsv_tts"]);
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -123,6 +124,62 @@ function createStreamingMessage(role) {
   messages.appendChild(item);
   messages.scrollTop = messages.scrollHeight;
   return bubble;
+}
+
+function createTypewriter(bubble) {
+  let visible = "";
+  let pending = "";
+  let timer = null;
+  const idleResolvers = [];
+
+  const resolveIdle = () => {
+    while (idleResolvers.length > 0) {
+      const resolve = idleResolvers.shift();
+      resolve();
+    }
+  };
+
+  const tick = () => {
+    if (!pending) {
+      timer = null;
+      resolveIdle();
+      return;
+    }
+
+    const count = pending.length > 120 ? 2 : 1;
+    visible += pending.slice(0, count);
+    pending = pending.slice(count);
+    bubble.textContent = visible;
+    messages.scrollTop = messages.scrollHeight;
+    timer = window.setTimeout(tick, pending.length > 120 ? 14 : 32);
+  };
+
+  return {
+    push(delta) {
+      if (!delta) return;
+      pending += delta;
+      if (!timer) tick();
+    },
+    finish(finalText) {
+      if (finalText && finalText.length > visible.length + pending.length) {
+        pending += finalText.slice(visible.length + pending.length);
+      }
+      if (!pending && !timer) return Promise.resolve();
+      return new Promise((resolve) => {
+        idleResolvers.push(resolve);
+        if (!timer) tick();
+      });
+    },
+  };
+}
+
+async function assertGsvReady() {
+  const health = await requestJson("/api/health");
+  const gsv = health.gsv.health || {};
+  if (!gsv.ok) {
+    const reason = gsv.error || gsv.message || gsv.status_code || "未知状态";
+    throw new Error(`已启用 GSV 语音合成，但 GSV 未连接：${reason}`);
+  }
 }
 
 function audioUrlFromEvent(event) {
@@ -405,13 +462,22 @@ function readForm() {
   new FormData(form).forEach((value, key) => {
     data[key] = numericFields.has(key) ? Number(value) : value;
   });
+  checkboxFields.forEach((key) => {
+    const field = form.elements[key];
+    if (field) data[key] = field.checked;
+  });
   return data;
 }
 
 function fillForm(data) {
   for (const [key, value] of Object.entries(data)) {
     const field = form.elements[key];
-    if (field) field.value = value ?? "";
+    if (!field) continue;
+    if (checkboxFields.has(key)) {
+      field.checked = value !== false && value !== "false";
+    } else {
+      field.value = value ?? "";
+    }
   }
 }
 
@@ -448,19 +514,31 @@ async function runChat(userText) {
   if (!text) return;
 
   busy = true;
-  setStatus("回复生成中");
-  await ensureAudioContext().catch(() => {});
-  appendMessage("user", text);
-  const assistantBubble = createStreamingMessage("assistant");
+  let assistantBubble = null;
+  let typewriter = null;
   let assistantText = "";
   let buffer = "";
-  messageInput.value = "";
 
   try {
+    const currentSettings = await saveSettings(false);
+    const enableSpeech = currentSettings.enable_gsv_tts !== false;
+
+    if (enableSpeech) {
+      setStatus("检查 GSV 连接");
+      await assertGsvReady();
+      await ensureAudioContext().catch(() => {});
+    }
+
+    setStatus("回复生成中");
+    appendMessage("user", text);
+    assistantBubble = createStreamingMessage("assistant");
+    typewriter = createTypewriter(assistantBubble);
+    messageInput.value = "";
+
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, history, speak: true }),
+      body: JSON.stringify({ message: text, history, speak: enableSpeech }),
     });
     if (!response.ok || !response.body) {
       const payload = await response.text();
@@ -480,8 +558,7 @@ async function runChat(userText) {
         const event = JSON.parse(line);
         if (event.event === "text_delta") {
           assistantText += event.delta || "";
-          assistantBubble.textContent = assistantText;
-          messages.scrollTop = messages.scrollHeight;
+          typewriter.push(event.delta || "");
         } else if (event.event === "audio_start") {
           createInlineAudioStream(event.audio_id);
           setStatus("语音合成中");
@@ -494,7 +571,7 @@ async function runChat(userText) {
           setStatus("语音播放中");
         } else if (event.event === "audio") {
           enqueueAudio(event);
-          setStatus("播放语音中");
+          setStatus("语音播放中");
         } else if (event.event === "audio_error") {
           if (event.audio_id) inlineAudioStreams.delete(event.audio_id);
           setStatus(event.message || "语音合成失败");
@@ -502,7 +579,6 @@ async function runChat(userText) {
           throw new Error(event.message);
         } else if (event.event === "done") {
           assistantText = event.assistant_text || assistantText;
-          assistantBubble.textContent = assistantText;
         }
       }
     }
@@ -511,17 +587,23 @@ async function runChat(userText) {
       const event = JSON.parse(buffer);
       if (event.event === "done") {
         assistantText = event.assistant_text || assistantText;
-        assistantBubble.textContent = assistantText;
       }
     }
 
+    if (typewriter) {
+      await typewriter.finish(assistantText);
+    }
     history.push({ role: "user", content: text });
     history.push({ role: "assistant", content: assistantText });
     const audioStillPlaying = audioContext && streamPlaybackTime > audioContext.currentTime + 0.2;
     setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : "完成");
     if (audioStillPlaying) markCompleteAfterInlineAudio();
   } catch (error) {
-    assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
+    if (assistantBubble) {
+      assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
+    } else {
+      appendMessage("assistant", `出错：${error.message}`);
+    }
     setStatus("出错");
   } finally {
     busy = false;

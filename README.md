@@ -83,6 +83,7 @@ http://127.0.0.1:7860
 `GSV` 页签填写：
 
 - GSV API URL，默认 `http://127.0.0.1:9880`
+- 是否启用 GSV 语音合成；关闭后只进行文字聊天
 - GSV 版本，可选 `v1`、`v2`、`v2Pro`、`v2ProPlus`、`v3`、`v4`
 - Device 和 Half Precision
 - GPT 权重路径，可选；不填则使用所选版本的默认路径
@@ -91,7 +92,7 @@ http://127.0.0.1:7860
 
 修改 GSV 版本、Device、Half Precision 或权重路径后，需要先停止 GSV，再重新启动 GSV。
 
-聊天时文本会流式显示，语音会通过 GPT-SoVITS TTS 代理边接收边播放。Streaming Mode 默认使用 `1`；`1/2/3` 是 GSV 的生成流式模式，`0` 会完整生成后再通过同一个流式代理传输。
+启用 GSV 语音合成时，发送聊天前会检查 GSV 是否已连接。聊天时文本会逐字显示，语音会通过 GPT-SoVITS TTS 代理边接收边播放。Streaming Mode 默认使用 `1`；`1/2/3` 是 GSV 的生成流式模式，`0` 会完整生成后再通过同一个流式代理传输。
 
 默认参考音频：
 

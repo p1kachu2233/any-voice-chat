@@ -17,6 +17,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "openai_temperature": 0.7,
     "system_prompt": "你是一个适合语音聊天的助手。回答要自然、简洁，像真人对话一样。",
     "asr_language": "zh",
+    "enable_gsv_tts": True,
     "gsv_api_url": "http://127.0.0.1:9880",
     "gsv_version": "v2",
     "gsv_device": "cuda",

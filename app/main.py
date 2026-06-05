@@ -221,18 +221,18 @@ def chat_stream(payload: ChatPayload):
     def generate():
         assistant_text = ""
         tts_buffer = ""
-        speak_enabled = payload.speak
+        speak_enabled = payload.speak and settings.get("enable_gsv_tts", True)
 
         if speak_enabled:
             gsv_health = check_gsv_api(settings)
             if not gsv_health.get("ok"):
-                speak_enabled = False
                 yield _stream_event(
-                    "audio_error",
+                    "error",
                     {
-                        "message": f"GSV 未连接，已跳过语音：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
+                        "message": f"已启用 GSV 语音合成，但 GSV 未连接：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
                     },
                 )
+                return
 
         yield _stream_event("start", {"user_text": user_text})
         try:
