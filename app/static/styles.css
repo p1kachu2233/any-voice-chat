@@ -323,6 +323,18 @@ body.settings-only .settings-pane {
   border-color: var(--danger);
 }
 
+.icon-button.listening {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #f0faf6;
+}
+
+.icon-button.listening.recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: #fff1f0;
+}
+
 .send-button,
 .save-button,
 .action-row button:first-child {

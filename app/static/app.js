@@ -28,7 +28,27 @@ let currentObjectUrl = null;
 let pinnedHelpAnchor = null;
 let audioContext = null;
 let streamPlaybackTime = 0;
+let voiceMode = false;
+let vadStream = null;
+let vadAudioContext = null;
+let vadAnalyser = null;
+let vadData = null;
+let vadFrameId = null;
+let vadSpeaking = false;
+let vadSilenceStartedAt = 0;
+let vadSpeechStartedAt = 0;
+let vadLastSubmitAt = 0;
+let voiceInputSerial = 0;
+let currentChatController = null;
+let currentChatInterrupted = false;
+let currentTypewriter = null;
+let activeChatId = 0;
 const inlineAudioStreams = new Map();
+const activeAudioSources = new Set();
+const VAD_THRESHOLD = 0.035;
+const VAD_SILENCE_MS = 900;
+const VAD_MIN_SPEECH_MS = 350;
+const VAD_COOLDOWN_MS = 700;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -226,6 +246,16 @@ function createTypewriter(bubble, options = {}) {
         if (!timer) tick();
       });
     },
+    cancel() {
+      waiting = false;
+      pending = "";
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      render();
+      resolveIdle();
+    },
   };
 }
 
@@ -268,7 +298,7 @@ function markCompleteAfterInlineAudio() {
   const waitMs = Math.max(0, streamPlaybackTime - audioContext.currentTime) * 1000 + 120;
   window.setTimeout(() => {
     if (!busy && !audioPlaying && audioQueue.length === 0) {
-      setStatus("完成");
+      setStatus(voiceMode ? "监听中" : "完成");
     }
   }, waitMs);
 }
@@ -346,6 +376,8 @@ function schedulePcmChunk(ctx, bytes, format) {
   source.connect(ctx.destination);
   const startTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
   streamPlaybackTime = startTime;
+  activeAudioSources.add(source);
+  source.onended = () => activeAudioSources.delete(source);
   source.start(startTime);
   streamPlaybackTime += buffer.duration;
   return { frames: frameCount, startTime };
@@ -516,6 +548,45 @@ function playElementAudio(audioUrl) {
   });
 }
 
+function stopAudioPlayback() {
+  audioQueue = [];
+  inlineAudioStreams.clear();
+  if (replyAudio) {
+    replyAudio.pause();
+    replyAudio.removeAttribute("src");
+    replyAudio.load();
+  }
+  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+  currentObjectUrl = null;
+  activeAudioSources.forEach((source) => {
+    try {
+      source.stop();
+    } catch (error) {
+      // Already stopped.
+    }
+  });
+  activeAudioSources.clear();
+  if (audioContext) {
+    streamPlaybackTime = audioContext.currentTime;
+  } else {
+    streamPlaybackTime = 0;
+  }
+  audioPlaying = false;
+}
+
+function interruptAssistant(reason = "interrupted") {
+  currentChatInterrupted = true;
+  if (currentChatController) {
+    currentChatController.abort();
+  }
+  if (currentTypewriter) {
+    currentTypewriter.cancel();
+  }
+  stopAudioPlayback();
+  busy = false;
+  setStatus(reason === "speech" ? "已打断，正在听你说话" : "已打断");
+}
+
 async function playNextAudio() {
   if (audioPlaying || audioQueue.length === 0) return;
   audioPlaying = true;
@@ -528,6 +599,10 @@ async function playNextAudio() {
       await playElementAudio(nextUrl);
     }
   } catch (error) {
+    if (currentChatInterrupted || error.name === "AbortError") {
+      setStatus(voiceMode ? "监听中" : "已打断");
+      return;
+    }
     setStatus(`语音播放失败：${error.message}`);
   } finally {
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
@@ -625,6 +700,10 @@ async function runChat(userText) {
   if (!text) return;
 
   busy = true;
+  currentChatInterrupted = false;
+  const chatId = activeChatId + 1;
+  activeChatId = chatId;
+  currentChatController = new AbortController();
   let assistantBubble = null;
   let typewriter = null;
   let assistantText = "";
@@ -649,6 +728,7 @@ async function runChat(userText) {
     appendMessage("user", text);
     assistantBubble = createStreamingMessage("assistant");
     typewriter = createTypewriter(assistantBubble, { speech: enableSpeech });
+    currentTypewriter = typewriter;
     typewriter.setWaiting(true);
     messageInput.value = "";
 
@@ -662,6 +742,7 @@ async function runChat(userText) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, history, speak: enableSpeech }),
+      signal: currentChatController.signal,
     });
     if (!response.ok || !response.body) {
       const payload = await response.text();
@@ -729,6 +810,10 @@ async function runChat(userText) {
     setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : "完成");
     if (audioStillPlaying) markCompleteAfterInlineAudio();
   } catch (error) {
+    if (currentChatInterrupted || error.name === "AbortError") {
+      setStatus(voiceMode ? "监听中" : "已打断");
+      return;
+    }
     if (assistantBubble) {
       assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
     } else {
@@ -736,7 +821,12 @@ async function runChat(userText) {
     }
     setStatus("出错");
   } finally {
-    busy = false;
+    if (chatId === activeChatId) {
+      busy = false;
+      currentChatController = null;
+      currentTypewriter = null;
+      currentChatInterrupted = false;
+    }
   }
 }
 
@@ -746,6 +836,12 @@ function chooseMimeType() {
 }
 
 async function startRecording() {
+  if (voiceMode) {
+    stopVoiceMode();
+    return;
+  }
+  await startVoiceMode();
+  return;
   if (busy) return;
   await ensureAudioContext().catch(() => {});
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -768,13 +864,144 @@ async function startRecording() {
 }
 
 function stopRecording() {
+  if (voiceMode) {
+    stopVoiceMode();
+    return;
+  }
   if (recorder && recorder.state === "recording") {
     recorder.stop();
   }
 }
 
-async function transcribeAndChat(blob) {
-  if (busy) return;
+function audioConstraints() {
+  return {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  };
+}
+
+function voiceLevel() {
+  if (!vadAnalyser || !vadData) return 0;
+  vadAnalyser.getByteTimeDomainData(vadData);
+  let sum = 0;
+  for (let index = 0; index < vadData.length; index += 1) {
+    const value = (vadData[index] - 128) / 128;
+    sum += value * value;
+  }
+  return Math.sqrt(sum / vadData.length);
+}
+
+function beginVoiceUtterance(now) {
+  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < VAD_COOLDOWN_MS) return;
+  vadSpeaking = true;
+  const utteranceSerial = voiceInputSerial + 1;
+  voiceInputSerial = utteranceSerial;
+  vadSpeechStartedAt = now;
+  vadSilenceStartedAt = 0;
+  chunks = [];
+  interruptAssistant("speech");
+
+  const mimeType = chooseMimeType();
+  recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  };
+  recorder.onstop = async () => {
+    const elapsed = performance.now() - vadSpeechStartedAt;
+    const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+    if (voiceMode && elapsed >= VAD_MIN_SPEECH_MS && blob.size > 0) {
+      vadLastSubmitAt = performance.now();
+      await transcribeAndChat(blob, { autoVoice: true, voiceSerial: utteranceSerial });
+    } else if (voiceMode) {
+      setStatus("监听中");
+    }
+  };
+  recorder.start();
+  recordButton.classList.add("recording");
+  setStatus("正在听你说话");
+}
+
+function endVoiceUtterance() {
+  if (!vadSpeaking) return;
+  vadSpeaking = false;
+  vadSilenceStartedAt = 0;
+  recordButton.classList.remove("recording");
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+}
+
+function tickVoiceActivity() {
+  if (!voiceMode) return;
+  const now = performance.now();
+  const level = voiceLevel();
+  if (level >= VAD_THRESHOLD) {
+    beginVoiceUtterance(now);
+  } else if (vadSpeaking) {
+    if (!vadSilenceStartedAt) vadSilenceStartedAt = now;
+    if (now - vadSilenceStartedAt >= VAD_SILENCE_MS) {
+      endVoiceUtterance();
+    }
+  }
+  vadFrameId = window.requestAnimationFrame(tickVoiceActivity);
+}
+
+async function startVoiceMode() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("浏览器不支持录音");
+    return;
+  }
+  await ensureAudioContext().catch(() => {});
+  vadStream = await navigator.mediaDevices.getUserMedia(audioConstraints());
+  vadAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const source = vadAudioContext.createMediaStreamSource(vadStream);
+  vadAnalyser = vadAudioContext.createAnalyser();
+  vadAnalyser.fftSize = 1024;
+  vadData = new Uint8Array(vadAnalyser.fftSize);
+  source.connect(vadAnalyser);
+  voiceMode = true;
+  vadSpeaking = false;
+  vadSilenceStartedAt = 0;
+  recordButton.classList.add("listening");
+  recordButton.title = "关闭连续语音输入";
+  recordIcon.textContent = "●";
+  setStatus("监听中");
+  tickVoiceActivity();
+}
+
+function stopVoiceMode() {
+  voiceMode = false;
+  if (vadFrameId) {
+    window.cancelAnimationFrame(vadFrameId);
+    vadFrameId = null;
+  }
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+  }
+  if (vadStream) {
+    vadStream.getTracks().forEach((track) => track.stop());
+  }
+  if (vadAudioContext) {
+    vadAudioContext.close().catch(() => {});
+  }
+  vadStream = null;
+  vadAudioContext = null;
+  vadAnalyser = null;
+  vadData = null;
+  vadSpeaking = false;
+  recordButton.classList.remove("listening", "recording");
+  recordButton.title = "开启连续语音输入";
+  recordIcon.textContent = "●";
+  setStatus("连续语音已关闭");
+}
+
+async function transcribeAndChat(blob, options = {}) {
+  if (busy) {
+    interruptAssistant(options.autoVoice ? "speech" : "interrupted");
+  }
   busy = true;
   setStatus("识别中");
   try {
@@ -784,6 +1011,10 @@ async function transcribeAndChat(blob) {
       method: "POST",
       body: formData,
     });
+    if (options.voiceSerial && options.voiceSerial !== voiceInputSerial) {
+      busy = false;
+      return;
+    }
     busy = false;
     await runChat(asr.text || "");
   } catch (error) {
@@ -881,5 +1112,6 @@ recordButton.addEventListener("click", () => {
   }
 });
 
+recordButton.title = "开启连续语音输入";
 setupHelpTips();
 loadSettings().catch((error) => setStatus(`加载设置失败：${error.message}`));
