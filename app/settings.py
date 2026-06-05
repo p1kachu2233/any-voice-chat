@@ -37,6 +37,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "media_type": "wav",
     "streaming_mode": 1,
     "tts_min_segment_chars": 10,
+    "tts_soft_segment_chars": 60,
+    "tts_force_segment_chars": 90,
     "text_display_mode": "speech_sync",
 }
 
@@ -77,6 +79,8 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
     if settings["text_split_method"] not in VALID_TEXT_SPLIT_METHODS:
         settings["text_split_method"] = DEFAULT_SETTINGS["text_split_method"]
     settings["tts_min_segment_chars"] = min(max(settings["tts_min_segment_chars"], 1), 80)
+    settings["tts_soft_segment_chars"] = min(max(settings["tts_soft_segment_chars"], 0), 500)
+    settings["tts_force_segment_chars"] = min(max(settings["tts_force_segment_chars"], 0), 1000)
     if settings["text_display_mode"] not in VALID_TEXT_DISPLAY_MODES:
         settings["text_display_mode"] = DEFAULT_SETTINGS["text_display_mode"]
     return settings

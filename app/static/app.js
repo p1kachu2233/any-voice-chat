@@ -38,10 +38,14 @@ const numericFields = new Set([
   "speed_factor",
   "streaming_mode",
   "tts_min_segment_chars",
+  "tts_soft_segment_chars",
+  "tts_force_segment_chars",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts"]);
 const defaultFormValues = {
   tts_min_segment_chars: 10,
+  tts_soft_segment_chars: 60,
+  tts_force_segment_chars: 90,
   text_display_mode: "speech_sync",
 };
 

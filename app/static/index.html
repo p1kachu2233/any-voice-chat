@@ -122,6 +122,22 @@
 
               <label class="field">
                 <span class="field-head">
+                  <span class="field-name">TTS 软切字符数</span>
+                  <span class="help-icon" tabindex="0" data-tip="没有句末标点但文本较长时，达到该长度后允许按逗号、顿号、冒号等软标点切分；填 0 关闭软切。" aria-label="没有句末标点但文本较长时，达到该长度后允许按逗号、顿号、冒号等软标点切分；填 0 关闭软切。">i</span>
+                </span>
+                <input name="tts_soft_segment_chars" type="number" min="0" max="500" step="1" value="60" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">TTS 强切字符数</span>
+                  <span class="help-icon" tabindex="0" data-tip="一直没有句末标点或软切点时，达到该长度后强制切分；填 0 关闭强切。" aria-label="一直没有句末标点或软切点时，达到该长度后强制切分；填 0 关闭强切。">i</span>
+                </span>
+                <input name="tts_force_segment_chars" type="number" min="0" max="1000" step="1" value="90" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
                   <span class="field-name">文字展示模式</span>
                   <span class="help-icon" tabindex="0" data-tip="跟随语音播放：当前音频段真正开始播放时才显示对应文字；文字先显示：按大模型流式输出先把文字打出来。" aria-label="跟随语音播放：当前音频段真正开始播放时才显示对应文字；文字先显示：按大模型流式输出先把文字打出来。">i</span>
                 </span>

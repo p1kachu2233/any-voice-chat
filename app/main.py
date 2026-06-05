@@ -48,6 +48,7 @@ class TtsPayload(BaseModel):
 
 
 _sentence_end_re = re.compile(r"[。！？!?；;.．…\n]")
+_soft_split_re = re.compile(r"[，,、：:]")
 _terminal_punctuation_chars = set("。！？!?；;.．…")
 _closing_punctuation_chars = set(")]}）】」』”’\"'")
 
@@ -133,12 +134,22 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
     yield _stream_event("audio_end", {"audio_id": audio_id})
 
 
-def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> tuple[str | None, str]:
+def _pop_tts_segment(
+    buffer: str,
+    min_chars: int = 10,
+    soft_chars: int = 60,
+    force_chars: int = 90,
+    final: bool = False,
+) -> tuple[str | None, str]:
     text = buffer.strip()
     if not text:
         if final and buffer:
             return buffer, ""
         return None, buffer
+
+    leading_end = _leading_terminal_boundary(buffer)
+    if leading_end > 0:
+        return buffer[:leading_end], buffer[leading_end:]
 
     hard_matches = _sentence_end_re.finditer(buffer)
     for match in hard_matches:
@@ -148,6 +159,18 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
         if _tts_text_len(segment) >= min_chars:
             return segment, rest
 
+    if soft_chars > 0 and _tts_text_len(text) >= soft_chars:
+        soft_matches = list(_soft_split_re.finditer(buffer))
+        if soft_matches:
+            end = soft_matches[-1].end()
+            segment = buffer[:end]
+            rest = buffer[end:]
+            if _tts_text_len(segment) >= min_chars:
+                return segment, rest
+
+    if force_chars > 0 and _tts_text_len(text) >= force_chars:
+        return buffer, ""
+
     if final:
         return buffer, ""
     return None, buffer
@@ -155,6 +178,24 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
 
 def _tts_text_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
+
+
+def _has_speakable_text(text: str) -> bool:
+    return any(char.isalnum() for char in text)
+
+
+def _leading_terminal_boundary(buffer: str) -> int:
+    index = 0
+    while index < len(buffer) and buffer[index].isspace():
+        index += 1
+    start = index
+    while index < len(buffer) and buffer[index] in _terminal_punctuation_chars:
+        index += 1
+    if index == start:
+        return 0
+    while index < len(buffer) and buffer[index] in _closing_punctuation_chars:
+        index += 1
+    return index
 
 
 def _extend_punctuation_boundary(buffer: str, end: int) -> int:
@@ -259,6 +300,8 @@ def chat_stream(payload: ChatPayload):
         text_display_mode = settings.get("text_display_mode") or "speech_sync"
         reveal_text_immediately = (not speak_enabled) or text_display_mode == "text_first"
         min_segment_chars = int(settings.get("tts_min_segment_chars") or 10)
+        soft_segment_chars = int(settings.get("tts_soft_segment_chars") or 0)
+        force_segment_chars = int(settings.get("tts_force_segment_chars") or 0)
 
         if speak_enabled:
             gsv_health = check_gsv_api(settings)
@@ -280,21 +323,37 @@ def chat_stream(payload: ChatPayload):
                     yield _stream_event("text_delta", {"delta": delta})
 
                 while True:
-                    segment, tts_buffer = _pop_tts_segment(tts_buffer, min_chars=min_segment_chars)
+                    segment, tts_buffer = _pop_tts_segment(
+                        tts_buffer,
+                        min_chars=min_segment_chars,
+                        soft_chars=soft_segment_chars,
+                        force_chars=force_segment_chars,
+                    )
                     if segment is None:
                         break
                     if speak_enabled:
-                        if segment.strip():
+                        if _has_speakable_text(segment):
                             yield from _iter_tts_stream_events(settings, segment)
                         elif not reveal_text_immediately:
                             yield _stream_event("text_delta", {"delta": segment})
 
-            segment, tts_buffer = _pop_tts_segment(tts_buffer, min_chars=min_segment_chars, final=True)
-            if segment and speak_enabled:
-                if segment.strip():
-                    yield from _iter_tts_stream_events(settings, segment)
-                elif not reveal_text_immediately:
-                    yield _stream_event("text_delta", {"delta": segment})
+            while True:
+                segment, tts_buffer = _pop_tts_segment(
+                    tts_buffer,
+                    min_chars=min_segment_chars,
+                    soft_chars=soft_segment_chars,
+                    force_chars=force_segment_chars,
+                    final=True,
+                )
+                if segment is None:
+                    break
+                if speak_enabled:
+                    if _has_speakable_text(segment):
+                        yield from _iter_tts_stream_events(settings, segment)
+                    elif not reveal_text_immediately:
+                        yield _stream_event("text_delta", {"delta": segment})
+                if not tts_buffer:
+                    break
 
             yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:
