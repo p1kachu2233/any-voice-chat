@@ -145,11 +145,12 @@ function createStreamingMessage(role) {
   return bubble;
 }
 
-function createTypewriter(bubble) {
+function createTypewriter(bubble, options = {}) {
   let visible = "";
   let pending = "";
   let timer = null;
   const idleResolvers = [];
+  const speechMode = options.speech === true;
 
   const resolveIdle = () => {
     while (idleResolvers.length > 0) {
@@ -165,12 +166,16 @@ function createTypewriter(bubble) {
       return;
     }
 
-    const count = pending.length > 120 ? 2 : 1;
-    visible += pending.slice(0, count);
-    pending = pending.slice(count);
+    const nextChar = pending.slice(0, 1);
+    visible += nextChar;
+    pending = pending.slice(1);
     bubble.textContent = visible;
     messages.scrollTop = messages.scrollHeight;
-    timer = window.setTimeout(tick, pending.length > 120 ? 14 : 32);
+    const punctuationPause = /[。！？!?；;，,、：:\n]/.test(nextChar);
+    const delay = speechMode
+      ? punctuationPause ? 260 : 110
+      : punctuationPause ? 120 : 36;
+    timer = window.setTimeout(tick, delay);
   };
 
   return {
@@ -582,7 +587,7 @@ async function runChat(userText) {
     setStatus("回复生成中");
     appendMessage("user", text);
     assistantBubble = createStreamingMessage("assistant");
-    typewriter = createTypewriter(assistantBubble);
+    typewriter = createTypewriter(assistantBubble, { speech: enableSpeech });
     messageInput.value = "";
 
     const response = await fetch("/api/chat/stream", {

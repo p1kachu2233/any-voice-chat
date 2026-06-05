@@ -49,6 +49,9 @@ class TtsPayload(BaseModel):
 
 _sentence_end_re = re.compile(r"[。！？!?；;\n]")
 _soft_split_re = re.compile(r"[，,、：:]")
+MIN_TTS_SEGMENT_CHARS = 10
+SOFT_TTS_SEGMENT_CHARS = 60
+FORCE_TTS_SEGMENT_CHARS = 90
 
 
 def _stream_event(event: str, data: dict[str, Any]) -> str:
@@ -95,16 +98,20 @@ def _register_tts_stream(settings: dict[str, Any], text: str) -> str:
     return f"/api/tts/stream/{stream_id}"
 
 
-def _iter_tts_stream_events(settings: dict[str, Any], segment: str):
+def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text: bool = False):
     audio_id = uuid.uuid4().hex
-    yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
     try:
         audio = stream_synthesize(settings, segment)
     except Exception as exc:
         log_exception("tts.stream", exc)
+        if reveal_text:
+            yield _stream_event("text_delta", {"delta": segment})
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
         return
 
+    if reveal_text:
+        yield _stream_event("text_delta", {"delta": segment})
+    yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
     try:
         for chunk in audio.response.iter_content(chunk_size=8192):
             if chunk:
@@ -128,29 +135,33 @@ def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]
     if not text:
         return None, ""
 
-    hard_matches = list(_sentence_end_re.finditer(buffer))
-    if hard_matches:
-        end = hard_matches[-1].end()
+    hard_matches = _sentence_end_re.finditer(buffer)
+    for match in hard_matches:
+        end = match.end()
         segment = buffer[:end].strip()
         rest = buffer[end:]
-        if len(segment) >= 4:
+        if _tts_text_len(segment) >= MIN_TTS_SEGMENT_CHARS:
             return segment, rest
 
-    if len(text) >= 60:
+    if _tts_text_len(text) >= SOFT_TTS_SEGMENT_CHARS:
         soft_matches = list(_soft_split_re.finditer(buffer))
         if soft_matches:
             end = soft_matches[-1].end()
             segment = buffer[:end].strip()
             rest = buffer[end:]
-            if len(segment) >= 12:
+            if _tts_text_len(segment) >= MIN_TTS_SEGMENT_CHARS:
                 return segment, rest
 
-    if len(text) >= 90:
+    if _tts_text_len(text) >= FORCE_TTS_SEGMENT_CHARS:
         return text, ""
 
     if final:
         return text, ""
     return None, buffer
+
+
+def _tts_text_len(text: str) -> int:
+    return len(re.sub(r"\s+", "", text))
 
 
 @app.get("/")
@@ -261,18 +272,19 @@ def chat_stream(payload: ChatPayload):
             for delta in stream_chat_completion(settings, user_text, payload.history):
                 assistant_text += delta
                 tts_buffer += delta
-                yield _stream_event("text_delta", {"delta": delta})
+                if not speak_enabled:
+                    yield _stream_event("text_delta", {"delta": delta})
 
                 while True:
                     segment, tts_buffer = _pop_tts_segment(tts_buffer)
                     if segment is None:
                         break
                     if speak_enabled:
-                        yield from _iter_tts_stream_events(settings, segment)
+                        yield from _iter_tts_stream_events(settings, segment, reveal_text=True)
 
             segment, tts_buffer = _pop_tts_segment(tts_buffer, final=True)
             if segment and speak_enabled:
-                yield from _iter_tts_stream_events(settings, segment)
+                yield from _iter_tts_stream_events(settings, segment, reveal_text=True)
 
             yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:

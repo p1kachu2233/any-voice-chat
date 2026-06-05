@@ -84,7 +84,7 @@ GSV 文本切分方式只能使用上游支持的 `cut0`、`cut1`、`cut2`、`cu
 
 OpenAI 流式响应必须按 UTF-8 bytes 解码，不要使用 `requests.iter_lines(decode_unicode=True)` 的默认响应编码，否则中文会变成 mojibake。GSV 子进程启动时设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`，避免 Windows 控制台 GBK 编码导致 `'gbk' codec can't encode character`。
 
-聊天语音播放默认在 `/api/chat/stream` 的 NDJSON 里发送 `audio_start`、`audio_chunk`、`audio_end` 事件；后端从 GSV `/tts` 读取到一块音频就立即 base64 后发给前端。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一套播放链路，但 GSV 端会完整生成后才开始返回音频。前端文字显示使用单一 `runChat` 函数里的打字机队列，不要新增临时替代入口。前端不要直接把 GSV 流 URL 塞给 `<audio>` 播放，浏览器对 GSV 的 wav/raw chunk 流不稳定；应解析 wav header，并用 Web Audio API 按 PCM chunk 调度播放。
+聊天语音播放默认在 `/api/chat/stream` 的 NDJSON 里发送 `audio_start`、`audio_chunk`、`audio_end` 事件；后端从 GSV `/tts` 读取到一块音频就立即 base64 后发给前端。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一套播放链路，但 GSV 端会完整生成后才开始返回音频。开启 GSV 语音时，后端发送给 GSV 的文本段必须按完整句聚合到至少 10 个非空白字符，短句要继续拼下一句，最终收尾段例外；前端文字显示也按这些 TTS 段落进入单一 `runChat` 打字机队列，不能按 OpenAI token 提前刷出多句。前端不要直接把 GSV 流 URL 塞给 `<audio>` 播放，浏览器对 GSV 的 wav/raw chunk 流不稳定；应解析 wav header，并用 Web Audio API 按 PCM chunk 调度播放。
 
 ## GPT-SoVITS 安装注意事项
 
