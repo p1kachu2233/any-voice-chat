@@ -48,12 +48,8 @@ class TtsPayload(BaseModel):
 
 
 _sentence_end_re = re.compile(r"[。！？!?；;.．…\n]")
-_soft_split_re = re.compile(r"[，,、：:]")
 _terminal_punctuation_chars = set("。！？!?；;.．…")
 _closing_punctuation_chars = set(")]}）】」』”’\"'")
-SOFT_TTS_SEGMENT_CHARS = 60
-FORCE_TTS_SEGMENT_CHARS = 90
-STREAMING_TAIL_HOLD_CHARS = 12
 
 
 def _stream_event(event: str, data: dict[str, Any]) -> str:
@@ -152,25 +148,6 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
         if _tts_text_len(segment) >= min_chars:
             return segment, rest
 
-    if _tts_text_len(text) >= SOFT_TTS_SEGMENT_CHARS:
-        soft_matches = list(_soft_split_re.finditer(buffer))
-        for soft_match in reversed(soft_matches):
-            end = _extend_punctuation_boundary(buffer, soft_match.end())
-            if _tts_text_len(buffer[end:]) < STREAMING_TAIL_HOLD_CHARS:
-                continue
-            segment = buffer[:end]
-            rest = buffer[end:]
-            if _tts_text_len(segment) >= min_chars:
-                return segment, rest
-
-    if _tts_text_len(text) >= FORCE_TTS_SEGMENT_CHARS:
-        split_end = _force_split_boundary(buffer)
-        if split_end > 0:
-            segment = buffer[:split_end]
-            rest = buffer[split_end:]
-            if _tts_text_len(segment) >= min_chars and _tts_text_len(rest) >= STREAMING_TAIL_HOLD_CHARS:
-                return segment, rest
-
     if final:
         return buffer, ""
     return None, buffer
@@ -178,16 +155,6 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
 
 def _tts_text_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
-
-
-def _force_split_boundary(buffer: str) -> int:
-    non_space_seen = 0
-    for index in range(len(buffer) - 1, -1, -1):
-        if not buffer[index].isspace():
-            non_space_seen += 1
-        if non_space_seen >= STREAMING_TAIL_HOLD_CHARS:
-            return index
-    return 0
 
 
 def _extend_punctuation_boundary(buffer: str, end: int) -> int:
