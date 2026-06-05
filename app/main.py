@@ -49,7 +49,8 @@ class TtsPayload(BaseModel):
 
 _sentence_end_re = re.compile(r"[。！？!?；;\n]")
 _soft_split_re = re.compile(r"[，,、：:]")
-_continued_punctuation_chars = set("。！？!?；;，,、：:…—-~～.．)]}）】」』”’\"'")
+_terminal_punctuation_chars = set("。！？!?；;.．…")
+_closing_punctuation_chars = set(")]}）】」』”’\"'")
 SOFT_TTS_SEGMENT_CHARS = 60
 FORCE_TTS_SEGMENT_CHARS = 90
 
@@ -165,7 +166,9 @@ def _tts_text_len(text: str) -> int:
 
 
 def _extend_punctuation_boundary(buffer: str, end: int) -> int:
-    while end < len(buffer) and buffer[end] in _continued_punctuation_chars:
+    while end < len(buffer) and buffer[end] in _terminal_punctuation_chars:
+        end += 1
+    while end < len(buffer) and buffer[end] in _closing_punctuation_chars:
         end += 1
     return end
 
