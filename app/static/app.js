@@ -222,15 +222,6 @@ function createTypewriter(bubble, options = {}) {
         if (!timer) tick();
       });
     },
-    getText() {
-      return currentText();
-    },
-    replace(finalText) {
-      visible = finalText || "";
-      pending = "";
-      waiting = false;
-      render();
-    },
   };
 }
 
@@ -727,9 +718,6 @@ async function runChat(userText) {
         await waitForScheduledAudioEnd();
       }
       await typewriter.finish(speechSyncText ? "" : finalAssistantText || assistantText);
-      if (speechSyncText && finalAssistantText && typewriter.getText() !== finalAssistantText) {
-        typewriter.replace(finalAssistantText);
-      }
     }
     history.push({ role: "user", content: text });
     history.push({ role: "assistant", content: finalAssistantText || assistantText });

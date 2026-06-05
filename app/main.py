@@ -47,7 +47,7 @@ class TtsPayload(BaseModel):
     text: str
 
 
-_sentence_end_re = re.compile(r"[。！？!?；;\n]")
+_sentence_end_re = re.compile(r"[。！？!?；;.．…\n]")
 _soft_split_re = re.compile(r"[，,、：:]")
 _terminal_punctuation_chars = set("。！？!?；;.．…")
 _closing_punctuation_chars = set(")]}）】」』”’\"'")
@@ -101,8 +101,13 @@ def _register_tts_stream(settings: dict[str, Any], text: str) -> str:
 
 def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text: bool = False):
     audio_id = uuid.uuid4().hex
+    tts_segment = segment.strip()
+    if not tts_segment:
+        if reveal_text:
+            yield _stream_event("text_delta", {"delta": segment})
+        return
     try:
-        audio = stream_synthesize(settings, segment)
+        audio = stream_synthesize(settings, tts_segment)
     except Exception as exc:
         log_exception("tts.stream", exc)
         if reveal_text:
@@ -134,12 +139,14 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
 def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> tuple[str | None, str]:
     text = buffer.strip()
     if not text:
-        return None, ""
+        if final and buffer:
+            return buffer, ""
+        return None, buffer
 
     hard_matches = _sentence_end_re.finditer(buffer)
     for match in hard_matches:
         end = _extend_punctuation_boundary(buffer, match.end())
-        segment = buffer[:end].strip()
+        segment = buffer[:end]
         rest = buffer[end:]
         if _tts_text_len(segment) >= min_chars:
             return segment, rest
@@ -148,16 +155,16 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
         soft_matches = list(_soft_split_re.finditer(buffer))
         if soft_matches:
             end = _extend_punctuation_boundary(buffer, soft_matches[-1].end())
-            segment = buffer[:end].strip()
+            segment = buffer[:end]
             rest = buffer[end:]
             if _tts_text_len(segment) >= min_chars:
                 return segment, rest
 
     if _tts_text_len(text) >= FORCE_TTS_SEGMENT_CHARS:
-        return text, ""
+        return buffer, ""
 
     if final:
-        return text, ""
+        return buffer, ""
     return None, buffer
 
 
@@ -292,11 +299,17 @@ def chat_stream(payload: ChatPayload):
                     if segment is None:
                         break
                     if speak_enabled:
-                        yield from _iter_tts_stream_events(settings, segment)
+                        if segment.strip():
+                            yield from _iter_tts_stream_events(settings, segment)
+                        elif not reveal_text_immediately:
+                            yield _stream_event("text_delta", {"delta": segment})
 
             segment, tts_buffer = _pop_tts_segment(tts_buffer, min_chars=min_segment_chars, final=True)
             if segment and speak_enabled:
-                yield from _iter_tts_stream_events(settings, segment)
+                if segment.strip():
+                    yield from _iter_tts_stream_events(settings, segment)
+                elif not reveal_text_immediately:
+                    yield _stream_event("text_delta", {"delta": segment})
 
             yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:
