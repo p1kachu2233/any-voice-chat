@@ -20,31 +20,42 @@
 - `runtime/`：上传音频和生成语音的运行时目录，不提交。
 - `README.md`：面向使用者的项目说明和环境配置步骤。
 - `AGENTS.md`：面向 Codex/Agent 的协作规则和项目上下文。
-- `start.py`：唯一启动入口。用户激活 `GPTSoVits` 后执行 `python start.py` 启动网页；网页内可启动 GSV API。
+- `start.py`：Python 启动入口。用户通常通过 `start.bat` 调用 `GPT-SoVITS/runtime/python.exe` 启动网页；网页内可启动 GSV API。
+- `start.bat`：Windows 启动脚本，使用 GPT-SoVITS 整合包自带 Python 启动本项目，并透传命令行参数。
 
-## Conda 环境约定
+## Python 环境约定
 
-用户已经创建并使用以下 conda 环境：
+当前项目不再默认使用官方安装脚本创建的 conda 环境。用户已将 GPT-SoVITS 整合包拷贝到 `GPT-SoVITS/`，该目录内自带 Python：
 
 ```powershell
-GPTSoVits
+GPT-SoVITS\runtime\python.exe
 ```
 
-之后执行本项目相关 Python 命令、安装依赖、运行脚本、调试 ASR/LLM/TTS 流程时，默认必须使用这个 conda 环境。
+之后执行本项目相关 Python 命令、运行脚本、调试 ASR/LLM/TTS 流程、验证编译时，默认必须使用这个整合包 Python。
 
 在交互式 PowerShell 中优先使用：
 
 ```powershell
-conda activate GPTSoVits
+.\start.bat
 ```
 
 在 Codex/Agent 的非交互式命令中，如果需要确保环境生效，优先使用：
 
 ```powershell
-conda run -n GPTSoVits <command>
+.\GPT-SoVITS\runtime\python.exe <command>
 ```
 
-不要随意创建新的 Python 虚拟环境，除非用户明确要求。
+该整合包 Python 使用 `python39._pth` 隔离路径；如果命令需要 import 本项目模块，必须像 `start.bat` 一样先把项目根目录插入 `sys.path`，或直接通过 `start.bat` 启动。
+
+整合包 Python 版本为 3.9，FastAPI 路由函数的参数注解不要使用 `X | None` 这类 Python 3.10+ 写法；需要可选参数时使用 `typing.Optional[X]`。
+
+如果需要启动网页时同时启动 GSV API：
+
+```powershell
+.\start.bat --with-gsv
+```
+
+不要随意创建新的 Python 虚拟环境或 conda 环境，除非用户明确要求。
 
 ## Web 应用约定
 
@@ -57,13 +68,13 @@ conda run -n GPTSoVits <command>
 后端使用 FastAPI，入口为：
 
 ```powershell
-python start.py
+.\start.bat
 ```
 
 如果需要启动网页时同时启动 GSV API：
 
 ```powershell
-python start.py --with-gsv
+.\start.bat --with-gsv
 ```
 
 GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧 GSV 设置区的 `启动 GSV` 按钮通过后端接口拉起，不再要求用户单独手动启动 `api_v2.py`。
@@ -103,7 +114,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device CU126 
 
 其中 `-NoProfile` 用于避免 PowerShell 用户配置中的 conda 初始化脚本与 GPT-SoVITS 安装脚本里的函数名冲突。
 
-如果安装依赖时 `pyopenjtalk` 构建失败，并出现 `nmake: no such file or directory`、`CMAKE_C_COMPILER not set` 或 `CMAKE_CXX_COMPILER not set`，通常是 Windows 缺少 MSVC C/C++ 编译工具链。优先让用户安装 Visual Studio 2022 Build Tools 的 `Desktop development with C++` / `Microsoft.VisualStudio.Workload.VCTools`，然后重新打开 PowerShell，激活 `GPTSoVits` 环境后重跑安装脚本。
+如果用户仍选择官方安装脚本，并在安装依赖时遇到 `pyopenjtalk` 构建失败，出现 `nmake: no such file or directory`、`CMAKE_C_COMPILER not set` 或 `CMAKE_CXX_COMPILER not set`，通常是 Windows 缺少 MSVC C/C++ 编译工具链。优先让用户安装 Visual Studio 2022 Build Tools 的 `Desktop development with C++` / `Microsoft.VisualStudio.Workload.VCTools`，然后重新打开 PowerShell 后重跑安装脚本。
 
 ## 子模块与生成文件
 

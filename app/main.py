@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -233,7 +233,7 @@ def health():
 
 
 @app.post("/api/gsv/start")
-def start_gsv(payload: SettingsPayload | None = None):
+def start_gsv(payload: Optional[SettingsPayload] = None):
     settings = save_settings(payload.settings) if payload else load_settings()
     try:
         result = start_gsv_api(settings)
