@@ -39,10 +39,15 @@ let vadSilenceStartedAt = 0;
 let vadSpeechStartedAt = 0;
 let vadLastSubmitAt = 0;
 let voiceInputSerial = 0;
+let asrBusy = false;
 let currentChatController = null;
 let currentChatInterrupted = false;
 let currentTypewriter = null;
 let activeChatId = 0;
+let voiceDraftBubble = null;
+let voiceDraftText = "";
+let speechRecognition = null;
+let speechRecognitionRunning = false;
 const inlineAudioStreams = new Map();
 const activeAudioSources = new Set();
 const VAD_THRESHOLD = 0.035;
@@ -172,6 +177,43 @@ function createStreamingMessage(role) {
   messages.appendChild(item);
   messages.scrollTop = messages.scrollHeight;
   return bubble;
+}
+
+function updateVoiceDraft(text, pending = true) {
+  clearEmpty();
+  voiceDraftText = text || "";
+  if (!voiceDraftBubble) {
+    const item = document.createElement("div");
+    item.className = "message user voice-draft";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    item.appendChild(bubble);
+    messages.appendChild(item);
+    voiceDraftBubble = bubble;
+  }
+  voiceDraftBubble.textContent = voiceDraftText || (pending ? "..." : "");
+  voiceDraftBubble.parentElement.classList.toggle("pending", pending);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function finalizeVoiceDraft(text) {
+  if (!voiceDraftBubble) {
+    appendMessage("user", text);
+    return;
+  }
+  voiceDraftBubble.textContent = text;
+  voiceDraftBubble.parentElement.classList.remove("voice-draft", "pending");
+  voiceDraftBubble = null;
+  voiceDraftText = "";
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function clearVoiceDraft() {
+  if (voiceDraftBubble) {
+    voiceDraftBubble.parentElement.remove();
+  }
+  voiceDraftBubble = null;
+  voiceDraftText = "";
 }
 
 function createTypewriter(bubble, options = {}) {
@@ -694,7 +736,7 @@ async function saveSpeechSetting(enabled) {
   return settings;
 }
 
-async function runChat(userText) {
+async function runChat(userText, options = {}) {
   if (busy) return;
   const text = userText.trim();
   if (!text) return;
@@ -725,7 +767,11 @@ async function runChat(userText) {
     }
 
     setStatus("回复生成中");
-    appendMessage("user", text);
+    if (options.useVoiceDraft) {
+      finalizeVoiceDraft(text);
+    } else {
+      appendMessage("user", text);
+    }
     assistantBubble = createStreamingMessage("assistant");
     typewriter = createTypewriter(assistantBubble, { speech: enableSpeech });
     currentTypewriter = typewriter;
@@ -807,7 +853,7 @@ async function runChat(userText) {
     history.push({ role: "user", content: text });
     history.push({ role: "assistant", content: finalAssistantText || assistantText });
     const audioStillPlaying = audioContext && streamPlaybackTime > audioContext.currentTime + 0.2;
-    setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : "完成");
+    setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : voiceMode ? "监听中" : "完成");
     if (audioStillPlaying) markCompleteAfterInlineAudio();
   } catch (error) {
     if (currentChatInterrupted || error.name === "AbortError") {
@@ -883,6 +929,67 @@ function audioConstraints() {
   };
 }
 
+function speechRecognitionLanguage() {
+  const lang = form.elements.asr_language?.value || "zh";
+  return lang === "yue" ? "yue-Hant-HK" : "zh-CN";
+}
+
+function startLiveAsrCaption() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) return;
+  stopLiveAsrCaption();
+  speechRecognition = new Recognition();
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = speechRecognitionLanguage();
+  speechRecognition.onresult = (event) => {
+    let transcript = "";
+    for (let index = 0; index < event.results.length; index += 1) {
+      transcript += event.results[index][0]?.transcript || "";
+    }
+    if (transcript.trim()) {
+      updateVoiceDraft(transcript.trim(), true);
+    }
+  };
+  speechRecognition.onerror = () => {};
+  speechRecognition.onend = () => {
+    speechRecognitionRunning = false;
+    if (voiceMode) {
+      window.setTimeout(() => {
+        if (voiceMode && speechRecognition && !speechRecognitionRunning) {
+          try {
+            speechRecognition.start();
+            speechRecognitionRunning = true;
+          } catch (error) {
+            speechRecognitionRunning = false;
+          }
+        }
+      }, 250);
+    }
+  };
+  try {
+    speechRecognition.start();
+    speechRecognitionRunning = true;
+  } catch (error) {
+    speechRecognitionRunning = false;
+  }
+}
+
+function stopLiveAsrCaption() {
+  if (!speechRecognition) return;
+  const recognition = speechRecognition;
+  speechRecognition = null;
+  speechRecognitionRunning = false;
+  recognition.onend = null;
+  recognition.onresult = null;
+  recognition.onerror = null;
+  try {
+    recognition.stop();
+  } catch (error) {
+    // Already stopped.
+  }
+}
+
 function voiceLevel() {
   if (!vadAnalyser || !vadData) return 0;
   vadAnalyser.getByteTimeDomainData(vadData);
@@ -902,6 +1009,7 @@ function beginVoiceUtterance(now) {
   vadSpeechStartedAt = now;
   vadSilenceStartedAt = 0;
   chunks = [];
+  updateVoiceDraft("", true);
   interruptAssistant("speech");
 
   const mimeType = chooseMimeType();
@@ -969,6 +1077,7 @@ async function startVoiceMode() {
   recordButton.title = "关闭连续语音输入";
   recordIcon.textContent = "●";
   setStatus("监听中");
+  startLiveAsrCaption();
   tickVoiceActivity();
 }
 
@@ -987,6 +1096,7 @@ function stopVoiceMode() {
   if (vadAudioContext) {
     vadAudioContext.close().catch(() => {});
   }
+  stopLiveAsrCaption();
   vadStream = null;
   vadAudioContext = null;
   vadAnalyser = null;
@@ -995,6 +1105,7 @@ function stopVoiceMode() {
   recordButton.classList.remove("listening", "recording");
   recordButton.title = "开启连续语音输入";
   recordIcon.textContent = "●";
+  clearVoiceDraft();
   setStatus("连续语音已关闭");
 }
 
@@ -1002,7 +1113,7 @@ async function transcribeAndChat(blob, options = {}) {
   if (busy) {
     interruptAssistant(options.autoVoice ? "speech" : "interrupted");
   }
-  busy = true;
+  asrBusy = true;
   setStatus("识别中");
   try {
     const formData = new FormData();
@@ -1012,15 +1123,22 @@ async function transcribeAndChat(blob, options = {}) {
       body: formData,
     });
     if (options.voiceSerial && options.voiceSerial !== voiceInputSerial) {
-      busy = false;
+      asrBusy = false;
       return;
     }
-    busy = false;
-    await runChat(asr.text || "");
+    asrBusy = false;
+    const text = (asr.text || "").trim();
+    if (!text) {
+      clearVoiceDraft();
+      setStatus(voiceMode ? "监听中" : "未识别到内容");
+      return;
+    }
+    updateVoiceDraft(text, false);
+    await runChat(text, { useVoiceDraft: true });
   } catch (error) {
     appendMessage("assistant", `出错：${error.message}`);
     setStatus("出错");
-    busy = false;
+    asrBusy = false;
   }
 }
 
