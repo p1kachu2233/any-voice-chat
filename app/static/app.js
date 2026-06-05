@@ -37,6 +37,7 @@ const numericFields = new Set([
   "tts_temperature",
   "speed_factor",
   "streaming_mode",
+  "tts_min_segment_chars",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts"]);
 
@@ -149,8 +150,15 @@ function createTypewriter(bubble, options = {}) {
   let visible = "";
   let pending = "";
   let timer = null;
+  let waiting = false;
   const idleResolvers = [];
   const speechMode = options.speech === true;
+
+  const render = () => {
+    const suffix = waiting || pending || timer ? "..." : "";
+    bubble.textContent = `${visible}${suffix}`;
+    messages.scrollTop = messages.scrollHeight;
+  };
 
   const resolveIdle = () => {
     while (idleResolvers.length > 0) {
@@ -162,6 +170,7 @@ function createTypewriter(bubble, options = {}) {
   const tick = () => {
     if (!pending) {
       timer = null;
+      render();
       resolveIdle();
       return;
     }
@@ -169,8 +178,7 @@ function createTypewriter(bubble, options = {}) {
     const nextChar = pending.slice(0, 1);
     visible += nextChar;
     pending = pending.slice(1);
-    bubble.textContent = visible;
-    messages.scrollTop = messages.scrollHeight;
+    render();
     const punctuationPause = /[。！？!?；;，,、：:\n]/.test(nextChar);
     const delay = speechMode
       ? punctuationPause ? 260 : 110
@@ -181,14 +189,23 @@ function createTypewriter(bubble, options = {}) {
   return {
     push(delta) {
       if (!delta) return;
+      waiting = true;
       pending += delta;
       if (!timer) tick();
     },
+    setWaiting(value) {
+      waiting = value;
+      if (!timer) render();
+    },
     finish(finalText) {
+      waiting = false;
       if (finalText && finalText.length > visible.length + pending.length) {
         pending += finalText.slice(visible.length + pending.length);
       }
-      if (!pending && !timer) return Promise.resolve();
+      if (!pending && !timer) {
+        render();
+        return Promise.resolve();
+      }
       return new Promise((resolve) => {
         idleResolvers.push(resolve);
         if (!timer) tick();
@@ -298,7 +315,7 @@ function schedulePcmChunk(ctx, bytes, format) {
   const bytesPerSample = format.bitsPerSample / 8;
   const frameSize = bytesPerSample * format.channels;
   const frameCount = Math.floor(bytes.length / frameSize);
-  if (frameCount <= 0 || bytesPerSample !== 2) return 0;
+  if (frameCount <= 0 || bytesPerSample !== 2) return null;
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, frameCount * frameSize);
   const buffer = ctx.createBuffer(format.channels, frameCount, format.sampleRate);
@@ -312,20 +329,33 @@ function schedulePcmChunk(ctx, bytes, format) {
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   source.connect(ctx.destination);
-  streamPlaybackTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
-  source.start(streamPlaybackTime);
+  const startTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
+  streamPlaybackTime = startTime;
+  source.start(startTime);
   streamPlaybackTime += buffer.duration;
-  return frameCount;
+  return { frames: frameCount, startTime };
 }
 
-function createInlineAudioStream(audioId) {
+function createInlineAudioStream(audioId, text = "", onPlaybackStart = null) {
   inlineAudioStreams.set(audioId, {
     pending: new Uint8Array(0),
     format: null,
     chunks: [],
     scheduledFrames: 0,
     receivedBytes: 0,
+    text,
+    onPlaybackStart,
+    textRevealed: false,
   });
+}
+
+function revealInlineTextAtPlayback(ctx, state, startTime) {
+  if (!state.text || !state.onPlaybackStart || state.textRevealed) return;
+  state.textRevealed = true;
+  const delayMs = Math.max(0, startTime - ctx.currentTime) * 1000;
+  window.setTimeout(() => {
+    state.onPlaybackStart(state.text);
+  }, delayMs);
 }
 
 async function pushInlineAudioChunk(audioId, audioBase64) {
@@ -338,6 +368,9 @@ async function pushInlineAudioChunk(audioId, audioBase64) {
       chunks: [],
       scheduledFrames: 0,
       receivedBytes: 0,
+      text: "",
+      onPlaybackStart: null,
+      textRevealed: false,
     };
     inlineAudioStreams.set(audioId, state);
   }
@@ -369,6 +402,7 @@ async function finishInlineAudioStream(audioId) {
     if (frames > 0) setStatus("语音播放中");
     if (state.scheduledFrames === 0) {
       if (state.receivedBytes > 0) {
+        revealInlineTextAtPlayback(ctx, state, ctx.currentTime);
         const fallbackUrl = URL.createObjectURL(new Blob(state.chunks, { type: "audio/wav" }));
         enqueueAudio(fallbackUrl);
         setStatus("语音流解码失败，已切换普通播放");
@@ -386,11 +420,21 @@ function drainInlineAudioState(ctx, state, final) {
   const playableLength = final ? state.pending.length - (state.pending.length % frameSize) : state.pending.length - (state.pending.length % frameSize);
   let frames = 0;
   if (playableLength > 0) {
-    frames = schedulePcmChunk(ctx, state.pending.slice(0, playableLength), state.format) || 0;
+    const scheduled = schedulePcmChunk(ctx, state.pending.slice(0, playableLength), state.format);
+    frames = scheduled?.frames || 0;
+    if (scheduled && frames > 0) {
+      revealInlineTextAtPlayback(ctx, state, scheduled.startTime);
+    }
     state.scheduledFrames += frames;
     state.pending = state.pending.slice(playableLength);
   }
   return frames;
+}
+
+function waitForScheduledAudioEnd(extraMs = 120) {
+  if (!audioContext) return Promise.resolve();
+  const waitMs = Math.max(0, streamPlaybackTime - audioContext.currentTime) * 1000 + extraMs;
+  return new Promise((resolve) => window.setTimeout(resolve, waitMs));
 }
 
 async function playWavStream(url) {
@@ -577,6 +621,7 @@ async function runChat(userText) {
     syncSpeechToggle();
     const currentSettings = settings;
     const enableSpeech = currentSettings.enable_gsv_tts !== false;
+    const speechSyncText = enableSpeech && currentSettings.text_display_mode !== "text_first";
 
     if (enableSpeech) {
       setStatus("检查 GSV 连接");
@@ -588,7 +633,14 @@ async function runChat(userText) {
     appendMessage("user", text);
     assistantBubble = createStreamingMessage("assistant");
     typewriter = createTypewriter(assistantBubble, { speech: enableSpeech });
+    typewriter.setWaiting(true);
     messageInput.value = "";
+
+    const revealAssistantText = (delta) => {
+      if (!delta) return;
+      if (!speechSyncText) assistantText += delta;
+      typewriter.push(delta);
+    };
 
     const response = await fetch("/api/chat/stream", {
       method: "POST",
@@ -612,10 +664,13 @@ async function runChat(userText) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
         if (event.event === "text_delta") {
-          assistantText += event.delta || "";
-          typewriter.push(event.delta || "");
+          revealAssistantText(event.delta || "");
         } else if (event.event === "audio_start") {
-          createInlineAudioStream(event.audio_id);
+          createInlineAudioStream(
+            event.audio_id,
+            event.text || "",
+            speechSyncText ? revealAssistantText : null,
+          );
           setStatus("语音合成中");
         } else if (event.event === "audio_chunk") {
           await pushInlineAudioChunk(event.audio_id, event.audio_base64);
@@ -629,6 +684,7 @@ async function runChat(userText) {
           setStatus("语音播放中");
         } else if (event.event === "audio_error") {
           if (event.audio_id) inlineAudioStreams.delete(event.audio_id);
+          if (speechSyncText && event.text) revealAssistantText(event.text);
           setStatus(event.message || "语音合成失败");
         } else if (event.event === "error") {
           throw new Error(event.message);
@@ -646,6 +702,9 @@ async function runChat(userText) {
     }
 
     if (typewriter) {
+      if (speechSyncText) {
+        await waitForScheduledAudioEnd();
+      }
       await typewriter.finish(assistantText);
     }
     history.push({ role: "user", content: text });

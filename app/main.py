@@ -49,7 +49,6 @@ class TtsPayload(BaseModel):
 
 _sentence_end_re = re.compile(r"[。！？!?；;\n]")
 _soft_split_re = re.compile(r"[，,、：:]")
-MIN_TTS_SEGMENT_CHARS = 10
 SOFT_TTS_SEGMENT_CHARS = 60
 FORCE_TTS_SEGMENT_CHARS = 90
 
@@ -130,7 +129,7 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
     yield _stream_event("audio_end", {"audio_id": audio_id})
 
 
-def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]:
+def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> tuple[str | None, str]:
     text = buffer.strip()
     if not text:
         return None, ""
@@ -140,7 +139,7 @@ def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]
         end = match.end()
         segment = buffer[:end].strip()
         rest = buffer[end:]
-        if _tts_text_len(segment) >= MIN_TTS_SEGMENT_CHARS:
+        if _tts_text_len(segment) >= min_chars:
             return segment, rest
 
     if _tts_text_len(text) >= SOFT_TTS_SEGMENT_CHARS:
@@ -149,7 +148,7 @@ def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]
             end = soft_matches[-1].end()
             segment = buffer[:end].strip()
             rest = buffer[end:]
-            if _tts_text_len(segment) >= MIN_TTS_SEGMENT_CHARS:
+            if _tts_text_len(segment) >= min_chars:
                 return segment, rest
 
     if _tts_text_len(text) >= FORCE_TTS_SEGMENT_CHARS:
@@ -255,6 +254,9 @@ def chat_stream(payload: ChatPayload):
         assistant_text = ""
         tts_buffer = ""
         speak_enabled = payload.speak and settings.get("enable_gsv_tts", True)
+        text_display_mode = settings.get("text_display_mode") or "speech_sync"
+        reveal_text_immediately = (not speak_enabled) or text_display_mode == "text_first"
+        min_segment_chars = int(settings.get("tts_min_segment_chars") or 10)
 
         if speak_enabled:
             gsv_health = check_gsv_api(settings)
@@ -272,19 +274,19 @@ def chat_stream(payload: ChatPayload):
             for delta in stream_chat_completion(settings, user_text, payload.history):
                 assistant_text += delta
                 tts_buffer += delta
-                if not speak_enabled:
+                if reveal_text_immediately:
                     yield _stream_event("text_delta", {"delta": delta})
 
                 while True:
-                    segment, tts_buffer = _pop_tts_segment(tts_buffer)
+                    segment, tts_buffer = _pop_tts_segment(tts_buffer, min_chars=min_segment_chars)
                     if segment is None:
                         break
                     if speak_enabled:
-                        yield from _iter_tts_stream_events(settings, segment, reveal_text=True)
+                        yield from _iter_tts_stream_events(settings, segment)
 
-            segment, tts_buffer = _pop_tts_segment(tts_buffer, final=True)
+            segment, tts_buffer = _pop_tts_segment(tts_buffer, min_chars=min_segment_chars, final=True)
             if segment and speak_enabled:
-                yield from _iter_tts_stream_events(settings, segment, reveal_text=True)
+                yield from _iter_tts_stream_events(settings, segment)
 
             yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:

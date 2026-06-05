@@ -51,6 +51,7 @@
 
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="openai" type="button">OpenAI</button>
+          <button class="tab" data-tab="app" type="button">应用</button>
           <button class="tab" data-tab="gsv" type="button">GSV</button>
           <button class="tab" data-tab="asr" type="button">ASR</button>
         </div>
@@ -102,6 +103,34 @@
               </span>
               <textarea name="system_prompt" rows="5"></textarea>
             </label>
+          </section>
+
+          <section class="tab-panel" data-panel="app">
+            <div class="section-title">
+              <h3>聊天体验</h3>
+              <p>控制本应用如何拆分语音段落，以及文字和语音的展示节奏。</p>
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">TTS 最小段落字符数</span>
+                  <span class="help-icon" tabindex="0" data-tip="大模型回复会先按句子切分；如果当前段落少于这个字符数，会继续拼下一句再发给 GSV。最后收尾段例外。" aria-label="大模型回复会先按句子切分；如果当前段落少于这个字符数，会继续拼下一句再发给 GSV。最后收尾段例外。">i</span>
+                </span>
+                <input name="tts_min_segment_chars" type="number" min="1" max="80" step="1" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">文字展示模式</span>
+                  <span class="help-icon" tabindex="0" data-tip="跟随语音播放：当前音频段真正开始播放时才显示对应文字；文字先显示：按大模型流式输出先把文字打出来。" aria-label="跟随语音播放：当前音频段真正开始播放时才显示对应文字；文字先显示：按大模型流式输出先把文字打出来。">i</span>
+                </span>
+                <select name="text_display_mode">
+                  <option value="speech_sync">跟随语音播放</option>
+                  <option value="text_first">文字先显示</option>
+                </select>
+              </label>
+            </div>
           </section>
 
           <section class="tab-panel" data-panel="gsv">

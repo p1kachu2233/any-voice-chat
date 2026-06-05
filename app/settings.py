@@ -36,11 +36,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "speed_factor": 1.0,
     "media_type": "wav",
     "streaming_mode": 1,
+    "tts_min_segment_chars": 10,
+    "text_display_mode": "speech_sync",
 }
 
 _settings_lock = threading.Lock()
 DEFAULT_IF_EMPTY_KEYS = {"ref_audio_path", "prompt_text", "prompt_lang", "text_lang"}
 VALID_TEXT_SPLIT_METHODS = {"cut0", "cut1", "cut2", "cut3", "cut4", "cut5"}
+VALID_TEXT_DISPLAY_MODES = {"speech_sync", "text_first"}
 
 
 def _coerce_value(key: str, value: Any) -> Any:
@@ -73,6 +76,9 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
             settings[key] = DEFAULT_SETTINGS[key]
     if settings["text_split_method"] not in VALID_TEXT_SPLIT_METHODS:
         settings["text_split_method"] = DEFAULT_SETTINGS["text_split_method"]
+    settings["tts_min_segment_chars"] = min(max(settings["tts_min_segment_chars"], 1), 80)
+    if settings["text_display_mode"] not in VALID_TEXT_DISPLAY_MODES:
+        settings["text_display_mode"] = DEFAULT_SETTINGS["text_display_mode"]
     return settings
 
 
