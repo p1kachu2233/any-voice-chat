@@ -171,6 +171,8 @@ function createTypewriter(bubble, options = {}) {
     }
   };
 
+  const currentText = () => visible + pending;
+
   const tick = () => {
     if (!pending) {
       timer = null;
@@ -203,8 +205,13 @@ function createTypewriter(bubble, options = {}) {
     },
     finish(finalText) {
       waiting = false;
-      if (finalText && finalText.length > visible.length + pending.length) {
-        pending += finalText.slice(visible.length + pending.length);
+      const current = currentText();
+      if (finalText && finalText !== current) {
+        if (finalText.startsWith(current)) {
+          pending += finalText.slice(current.length);
+        } else if (!current) {
+          pending += finalText;
+        }
       }
       if (!pending && !timer) {
         render();
@@ -214,6 +221,15 @@ function createTypewriter(bubble, options = {}) {
         idleResolvers.push(resolve);
         if (!timer) tick();
       });
+    },
+    getText() {
+      return currentText();
+    },
+    replace(finalText) {
+      visible = finalText || "";
+      pending = "";
+      waiting = false;
+      render();
     },
   };
 }
@@ -711,6 +727,9 @@ async function runChat(userText) {
         await waitForScheduledAudioEnd();
       }
       await typewriter.finish(speechSyncText ? "" : finalAssistantText || assistantText);
+      if (speechSyncText && finalAssistantText && typewriter.getText() !== finalAssistantText) {
+        typewriter.replace(finalAssistantText);
+      }
     }
     history.push({ role: "user", content: text });
     history.push({ role: "assistant", content: finalAssistantText || assistantText });
