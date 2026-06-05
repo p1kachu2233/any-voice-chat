@@ -40,6 +40,10 @@ const numericFields = new Set([
   "tts_min_segment_chars",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts"]);
+const defaultFormValues = {
+  tts_min_segment_chars: 10,
+  text_display_mode: "speech_sync",
+};
 
 function setStatus(text) {
   if (statusText) statusText.textContent = text;
@@ -544,7 +548,7 @@ function readForm() {
 }
 
 function fillForm(data) {
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries({ ...defaultFormValues, ...data })) {
     const field = form.elements[key];
     if (!field) continue;
     if (checkboxFields.has(key)) {
