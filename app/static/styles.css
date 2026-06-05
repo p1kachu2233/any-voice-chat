@@ -362,6 +362,23 @@ body.settings-only .settings-pane {
   backdrop-filter: blur(10px);
 }
 
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-status {
+  display: none;
+  max-width: 220px;
+}
+
+body.settings-only .settings-status {
+  display: block;
+}
+
 .settings-head h2 {
   font-size: 18px;
   font-weight: 750;
@@ -486,7 +503,7 @@ body.settings-only .settings-pane {
 
 .action-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 16px;
 }

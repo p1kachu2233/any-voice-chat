@@ -181,6 +181,37 @@ def stop_gsv():
     return stop_gsv_api(load_settings())
 
 
+@app.post("/api/gsv/warmup")
+def warmup_gsv():
+    settings = load_settings()
+    gsv_health = check_gsv_api(settings)
+    if not gsv_health.get("ok"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"GSV 未连接：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
+        )
+
+    started_at = time.perf_counter()
+    bytes_read = 0
+    try:
+        audio = stream_synthesize(settings, "你好。")
+        try:
+            for chunk in audio.response.iter_content(chunk_size=8192):
+                if chunk:
+                    bytes_read += len(chunk)
+        finally:
+            audio.response.close()
+    except Exception as exc:
+        log_exception("gsv.warmup", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        "bytes": bytes_read,
+        "elapsed_seconds": round(time.perf_counter() - started_at, 2),
+    }
+
+
 @app.post("/api/asr")
 async def asr(audio: UploadFile = File(...), language: str = "zh"):
     try:

@@ -11,6 +11,8 @@ async function refreshAdmin() {
   const statusBox = document.querySelector("#statusBox");
   const appLogBox = document.querySelector("#appLogBox");
   const gsvLogBox = document.querySelector("#gsvLogBox");
+  if (!statusBox || !appLogBox || !gsvLogBox) return;
+
   statusBox.textContent = "加载中...";
   appLogBox.textContent = "加载中...";
   gsvLogBox.textContent = "加载中...";
@@ -30,13 +32,34 @@ async function refreshAdmin() {
   }
 }
 
-document.querySelector("#refreshAdmin").addEventListener("click", refreshAdmin);
-document.querySelectorAll(".admin-tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".admin-tab").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".admin-tab-panel").forEach((item) => item.classList.remove("active"));
-    tab.classList.add("active");
-    document.querySelector(`[data-admin-panel="${tab.dataset.adminTab}"]`).classList.add("active");
+function activateAdminTab(name, updateHash = true) {
+  const tabName = name || "settings";
+  document.querySelectorAll(".admin-tab").forEach((item) => {
+    item.classList.toggle("active", item.getAttribute("data-admin-tab") === tabName);
   });
-});
-refreshAdmin();
+  document.querySelectorAll(".admin-tab-panel").forEach((item) => {
+    item.classList.toggle("active", item.getAttribute("data-admin-panel") === tabName);
+  });
+  if (updateHash) {
+    window.history.replaceState(null, "", `#${tabName}`);
+  }
+}
+
+function initAdmin() {
+  document.querySelector("#refreshAdmin")?.addEventListener("click", refreshAdmin);
+  document.querySelectorAll(".admin-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activateAdminTab(tab.getAttribute("data-admin-tab"));
+    });
+  });
+
+  const initialTab = (window.location.hash || "#settings").slice(1);
+  activateAdminTab(initialTab, false);
+  refreshAdmin();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAdmin);
+} else {
+  initAdmin();
+}

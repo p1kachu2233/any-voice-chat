@@ -39,7 +39,10 @@ const numericFields = new Set([
 const checkboxFields = new Set(["enable_gsv_tts"]);
 
 function setStatus(text) {
-  statusText.textContent = text;
+  if (statusText) statusText.textContent = text;
+  document.querySelectorAll("[data-status-text]").forEach((item) => {
+    item.textContent = text;
+  });
 }
 
 function setupHelpTips() {
@@ -763,6 +766,17 @@ document.querySelector("#stopGsv").addEventListener("click", async () => {
     setStatus(result.stopped ? "GSV 已停止" : "没有由本页面启动的 GSV 进程");
   } catch (error) {
     setStatus(`停止失败：${error.message}`);
+  }
+});
+
+document.querySelector("#warmupGsv").addEventListener("click", async () => {
+  try {
+    await saveSettings(false);
+    setStatus("正在预热 GSV");
+    const result = await requestJson("/api/gsv/warmup", { method: "POST" });
+    setStatus(`GSV 预热完成：${result.elapsed_seconds}s`);
+  } catch (error) {
+    setStatus(`预热失败：${error.message}`);
   }
 });
 

@@ -44,7 +44,10 @@
             <h2>设置</h2>
             <p>本地保存，不提交仓库</p>
           </div>
-          <button class="save-button" type="button" id="saveSettings">保存</button>
+          <div class="settings-actions">
+            <div class="status settings-status" data-status-text>待机</div>
+            <button class="save-button" type="button" id="saveSettings">保存</button>
+          </div>
         </div>
 
         <div class="tabs" role="tablist">
@@ -120,6 +123,7 @@
               <button type="button" id="startGsv">启动 GSV</button>
               <button type="button" id="stopGsv">停止 GSV</button>
               <button type="button" id="checkGsv">检查连接</button>
+              <button type="button" id="warmupGsv">预热 GSV</button>
             </div>
 
             <div class="section-title compact">
