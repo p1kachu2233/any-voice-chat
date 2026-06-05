@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import threading
@@ -14,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.asr_service import convert_to_wav, save_upload, transcribe_audio
-from app.gsv_client import stream_synthesize, synthesize
+from app.gsv_client import check_gsv_api, stream_synthesize, synthesize
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.log_store import APP_LOG_PATH, log_exception, read_tail
 from app.openai_client import chat_completion, stream_chat_completion
@@ -75,6 +76,34 @@ def _register_tts_stream(settings: dict[str, Any], text: str) -> str:
             "created_at": time.time(),
         }
     return f"/api/tts/stream/{stream_id}"
+
+
+def _iter_tts_stream_events(settings: dict[str, Any], segment: str):
+    audio_id = uuid.uuid4().hex
+    yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
+    try:
+        audio = stream_synthesize(settings, segment)
+    except Exception as exc:
+        log_exception("tts.stream", exc)
+        yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
+        return
+
+    try:
+        for chunk in audio.response.iter_content(chunk_size=8192):
+            if chunk:
+                yield _stream_event(
+                    "audio_chunk",
+                    {
+                        "audio_id": audio_id,
+                        "audio_base64": base64.b64encode(chunk).decode("ascii"),
+                    },
+                )
+    except Exception as exc:
+        log_exception("tts.stream.read", exc)
+        yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
+    finally:
+        audio.response.close()
+    yield _stream_event("audio_end", {"audio_id": audio_id})
 
 
 def _pop_tts_segment(buffer: str, final: bool = False) -> tuple[str | None, str]:
@@ -192,6 +221,18 @@ def chat_stream(payload: ChatPayload):
     def generate():
         assistant_text = ""
         tts_buffer = ""
+        speak_enabled = payload.speak
+
+        if speak_enabled:
+            gsv_health = check_gsv_api(settings)
+            if not gsv_health.get("ok"):
+                speak_enabled = False
+                yield _stream_event(
+                    "audio_error",
+                    {
+                        "message": f"GSV 未连接，已跳过语音：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
+                    },
+                )
 
         yield _stream_event("start", {"user_text": user_text})
         try:
@@ -204,26 +245,12 @@ def chat_stream(payload: ChatPayload):
                     segment, tts_buffer = _pop_tts_segment(tts_buffer)
                     if segment is None:
                         break
-                    if payload.speak:
-                        yield _stream_event(
-                            "audio_stream",
-                            {
-                                "text": segment,
-                                "audio_url": _register_tts_stream(settings, segment),
-                                "media_type": "wav",
-                            },
-                        )
+                    if speak_enabled:
+                        yield from _iter_tts_stream_events(settings, segment)
 
             segment, tts_buffer = _pop_tts_segment(tts_buffer, final=True)
-            if segment and payload.speak:
-                yield _stream_event(
-                    "audio_stream",
-                    {
-                        "text": segment,
-                        "audio_url": _register_tts_stream(settings, segment),
-                        "media_type": "wav",
-                    },
-                )
+            if segment and speak_enabled:
+                yield from _iter_tts_stream_events(settings, segment)
 
             yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:

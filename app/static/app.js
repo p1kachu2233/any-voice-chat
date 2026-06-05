@@ -21,6 +21,7 @@ let currentObjectUrl = null;
 let pinnedHelpAnchor = null;
 let audioContext = null;
 let streamPlaybackTime = 0;
+const inlineAudioStreams = new Map();
 
 const numericFields = new Set([
   "openai_temperature",
@@ -127,14 +128,19 @@ function createStreamingMessage(role) {
 function audioUrlFromEvent(event) {
   if (event.audio_url) return event.audio_url;
   if (!event.audio_base64) return null;
-  const binary = atob(event.audio_base64);
+  const bytes = bytesFromBase64(event.audio_base64);
+  const mediaType = event.media_type || "wav";
+  const blob = new Blob([bytes], { type: `audio/${mediaType}` });
+  return URL.createObjectURL(blob);
+}
+
+function bytesFromBase64(value) {
+  const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
   }
-  const mediaType = event.media_type || "wav";
-  const blob = new Blob([bytes], { type: `audio/${mediaType}` });
-  return URL.createObjectURL(blob);
+  return bytes;
 }
 
 function enqueueAudio(event) {
@@ -142,6 +148,16 @@ function enqueueAudio(event) {
   if (!audioUrl) return;
   audioQueue.push(audioUrl);
   playNextAudio();
+}
+
+function markCompleteAfterInlineAudio() {
+  if (!audioContext) return;
+  const waitMs = Math.max(0, streamPlaybackTime - audioContext.currentTime) * 1000 + 120;
+  window.setTimeout(() => {
+    if (!busy && !audioPlaying && audioQueue.length === 0) {
+      setStatus("完成");
+    }
+  }, waitMs);
 }
 
 async function ensureAudioContext() {
@@ -201,7 +217,7 @@ function schedulePcmChunk(ctx, bytes, format) {
   const bytesPerSample = format.bitsPerSample / 8;
   const frameSize = bytesPerSample * format.channels;
   const frameCount = Math.floor(bytes.length / frameSize);
-  if (frameCount <= 0 || bytesPerSample !== 2) return;
+  if (frameCount <= 0 || bytesPerSample !== 2) return 0;
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, frameCount * frameSize);
   const buffer = ctx.createBuffer(format.channels, frameCount, format.sampleRate);
@@ -218,6 +234,82 @@ function schedulePcmChunk(ctx, bytes, format) {
   streamPlaybackTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
   source.start(streamPlaybackTime);
   streamPlaybackTime += buffer.duration;
+  return frameCount;
+}
+
+function createInlineAudioStream(audioId) {
+  inlineAudioStreams.set(audioId, {
+    pending: new Uint8Array(0),
+    format: null,
+    chunks: [],
+    scheduledFrames: 0,
+    receivedBytes: 0,
+  });
+}
+
+async function pushInlineAudioChunk(audioId, audioBase64) {
+  const ctx = await ensureAudioContext();
+  let state = inlineAudioStreams.get(audioId);
+  if (!state) {
+    state = {
+      pending: new Uint8Array(0),
+      format: null,
+      chunks: [],
+      scheduledFrames: 0,
+      receivedBytes: 0,
+    };
+    inlineAudioStreams.set(audioId, state);
+  }
+
+  const bytes = bytesFromBase64(audioBase64);
+  state.chunks.push(bytes);
+  state.receivedBytes += bytes.length;
+  state.pending = concatBytes(state.pending, bytes);
+  if (!state.format) {
+    const parsed = parseWavHeader(state.pending);
+    if (!parsed) {
+      setStatus("收到语音数据，等待音频头");
+      return;
+    }
+    state.format = parsed;
+    state.pending = state.pending.slice(parsed.dataOffset);
+    setStatus(`语音流已连接 ${parsed.sampleRate}Hz`);
+  }
+
+  const frames = drainInlineAudioState(ctx, state, false);
+  if (frames > 0) setStatus("语音播放中");
+}
+
+async function finishInlineAudioStream(audioId) {
+  const ctx = await ensureAudioContext();
+  const state = inlineAudioStreams.get(audioId);
+  if (state) {
+    const frames = drainInlineAudioState(ctx, state, true);
+    if (frames > 0) setStatus("语音播放中");
+    if (state.scheduledFrames === 0) {
+      if (state.receivedBytes > 0) {
+        const fallbackUrl = URL.createObjectURL(new Blob(state.chunks, { type: "audio/wav" }));
+        enqueueAudio(fallbackUrl);
+        setStatus("语音流解码失败，已切换普通播放");
+      } else {
+        setStatus("语音合成没有返回音频");
+      }
+    }
+    inlineAudioStreams.delete(audioId);
+  }
+}
+
+function drainInlineAudioState(ctx, state, final) {
+  if (!state.format) return 0;
+  const frameSize = (state.format.bitsPerSample / 8) * state.format.channels;
+  const playableLength = final ? state.pending.length - (state.pending.length % frameSize) : state.pending.length - (state.pending.length % frameSize);
+  let frames = 0;
+  if (playableLength > 0) {
+    frames = schedulePcmChunk(ctx, state.pending.slice(0, playableLength), state.format) || 0;
+    state.scheduledFrames += frames;
+    state.pending = state.pending.slice(playableLength);
+  }
+  return frames;
 }
 
 async function playWavStream(url) {
@@ -301,6 +393,9 @@ async function playNextAudio() {
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = null;
     audioPlaying = false;
+    if (!busy && audioQueue.length === 0) {
+      setStatus("完成");
+    }
     playNextAudio();
   }
 }
@@ -353,7 +448,7 @@ async function runChat(userText) {
   if (!text) return;
 
   busy = true;
-  setStatus("模型输出中");
+  setStatus("回复生成中");
   await ensureAudioContext().catch(() => {});
   appendMessage("user", text);
   const assistantBubble = createStreamingMessage("assistant");
@@ -387,14 +482,22 @@ async function runChat(userText) {
           assistantText += event.delta || "";
           assistantBubble.textContent = assistantText;
           messages.scrollTop = messages.scrollHeight;
+        } else if (event.event === "audio_start") {
+          createInlineAudioStream(event.audio_id);
+          setStatus("语音合成中");
+        } else if (event.event === "audio_chunk") {
+          await pushInlineAudioChunk(event.audio_id, event.audio_base64);
+        } else if (event.event === "audio_end") {
+          await finishInlineAudioStream(event.audio_id);
         } else if (event.event === "audio_stream") {
           enqueueAudio(event.audio_url);
-          setStatus("流式播放语音中");
+          setStatus("语音播放中");
         } else if (event.event === "audio") {
           enqueueAudio(event);
           setStatus("播放语音中");
         } else if (event.event === "audio_error") {
-          setStatus(`分段合成失败：${event.message}`);
+          if (event.audio_id) inlineAudioStreams.delete(event.audio_id);
+          setStatus(event.message || "语音合成失败");
         } else if (event.event === "error") {
           throw new Error(event.message);
         } else if (event.event === "done") {
@@ -414,7 +517,9 @@ async function runChat(userText) {
 
     history.push({ role: "user", content: text });
     history.push({ role: "assistant", content: assistantText });
-    setStatus("完成");
+    const audioStillPlaying = audioContext && streamPlaybackTime > audioContext.currentTime + 0.2;
+    setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : "完成");
+    if (audioStillPlaying) markCompleteAfterInlineAudio();
   } catch (error) {
     assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
     setStatus("出错");
