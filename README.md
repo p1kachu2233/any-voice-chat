@@ -91,6 +91,8 @@ http://127.0.0.1:7860
 
 修改 GSV 版本、Device、Half Precision 或权重路径后，需要先停止 GSV，再重新启动 GSV。
 
+聊天时文本会流式显示，语音会通过 GPT-SoVITS TTS 代理边接收边播放。Streaming Mode 默认使用 `1`；`1/2/3` 是 GSV 的生成流式模式，`0` 会完整生成后再通过同一个流式代理传输。
+
 默认参考音频：
 
 ```text

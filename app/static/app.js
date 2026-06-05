@@ -244,6 +244,9 @@ async function runChat(userText) {
           assistantText += event.delta || "";
           assistantBubble.textContent = assistantText;
           messages.scrollTop = messages.scrollHeight;
+        } else if (event.event === "audio_stream") {
+          enqueueAudio(event.audio_url);
+          setStatus("流式播放语音中");
         } else if (event.event === "audio") {
           enqueueAudio(event);
           setStatus("播放语音中");

@@ -51,7 +51,7 @@ conda run -n GPTSoVits <command>
 本项目的网页聊天链路为：
 
 ```text
-浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions 流式输出 -> GPT-SoVITS API /tts 分段合成 -> 内存音频返回浏览器排队播放
+浏览器录音 -> GPT-SoVITS/tools/asr -> OpenAI 兼容 chat/completions 流式输出 -> GPT-SoVITS API /tts 分段流式合成 -> 浏览器通过音频流 URL 排队播放
 ```
 
 后端使用 FastAPI，入口为：
@@ -77,6 +77,8 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 后台页面入口为 `/admin`，用于查看服务状态、应用日志和 GSV 日志。应用日志写入 `runtime/app.log`，GSV API 日志写入 `runtime/gsv_api.log`。用户反馈服务无响应或 GSV 报错时，优先查看后台页和这两个日志。
 
 OpenAI 流式响应必须按 UTF-8 bytes 解码，不要使用 `requests.iter_lines(decode_unicode=True)` 的默认响应编码，否则中文会变成 mojibake。GSV 子进程启动时设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`，避免 Windows 控制台 GBK 编码导致 `'gbk' codec can't encode character`。
+
+聊天语音播放使用 `/api/tts/stream/{stream_id}` 代理 GSV `/tts` 的响应流。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一个代理接口，但 GSV 端会完整生成后才开始返回音频。
 
 ## GPT-SoVITS 安装注意事项
 

@@ -34,7 +34,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "tts_temperature": 1.0,
     "speed_factor": 1.0,
     "media_type": "wav",
-    "streaming_mode": 0,
+    "streaming_mode": 1,
 }
 
 _settings_lock = threading.Lock()

@@ -15,6 +15,11 @@ class SynthesizedAudio(NamedTuple):
     media_type: str
 
 
+class StreamingAudio(NamedTuple):
+    response: requests.Response
+    media_type: str
+
+
 def _base_url(settings: dict[str, Any]) -> str:
     return (settings.get("gsv_api_url") or "http://127.0.0.1:9880").rstrip("/")
 
@@ -47,7 +52,15 @@ def sanitize_tts_text(text: str) -> str:
     return (text or "").strip()
 
 
-def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
+def _streaming_mode(settings: dict[str, Any]) -> int:
+    try:
+        mode = int(settings.get("streaming_mode") or 0)
+    except (TypeError, ValueError):
+        mode = 0
+    return mode
+
+
+def build_tts_payload(settings: dict[str, Any], text: str, force_streaming: bool = False) -> dict[str, Any]:
     ref_audio_path = (settings.get("ref_audio_path") or "").strip()
     prompt_lang = (settings.get("prompt_lang") or "").strip()
     text_lang = (settings.get("text_lang") or "").strip()
@@ -65,7 +78,7 @@ def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
         for item in (settings.get("aux_ref_audio_paths") or "").splitlines()
         if item.strip()
     ]
-    payload = {
+    return {
         "text": text,
         "text_lang": text_lang,
         "ref_audio_path": ref_audio_path,
@@ -78,11 +91,14 @@ def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
         "text_split_method": settings.get("text_split_method") or "cut5",
         "batch_size": 1,
         "speed_factor": float(settings.get("speed_factor") or 1.0),
-        "media_type": settings.get("media_type") or "wav",
-        "streaming_mode": int(settings.get("streaming_mode") or 0),
+        "media_type": "wav" if force_streaming else settings.get("media_type") or "wav",
+        "streaming_mode": _streaming_mode(settings),
         "parallel_infer": True,
     }
 
+
+def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
+    payload = build_tts_payload(settings, text)
     response = requests.post(f"{_base_url(settings)}/tts", json=payload, timeout=240)
     content_type = response.headers.get("content-type", "")
     if response.status_code >= 400 or "application/json" in content_type:
@@ -90,6 +106,22 @@ def synthesize_bytes(settings: dict[str, Any], text: str) -> SynthesizedAudio:
 
     media_type = payload["media_type"]
     return SynthesizedAudio(content=response.content, media_type=media_type)
+
+
+def stream_synthesize(settings: dict[str, Any], text: str) -> StreamingAudio:
+    payload = build_tts_payload(settings, text, force_streaming=True)
+    response = requests.post(
+        f"{_base_url(settings)}/tts",
+        json=payload,
+        stream=True,
+        timeout=(10, 300),
+    )
+    content_type = response.headers.get("content-type", "")
+    if response.status_code >= 400 or "application/json" in content_type:
+        message = response.text
+        response.close()
+        raise RuntimeError(f"GSV 流式语音合成失败：{message}")
+    return StreamingAudio(response=response, media_type=content_type or "audio/wav")
 
 
 def synthesize(settings: dict[str, Any], text: str) -> Path:
