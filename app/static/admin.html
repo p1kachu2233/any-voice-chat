@@ -11,7 +11,7 @@
       <header class="admin-head">
         <div>
           <h1>后台</h1>
-          <p>服务状态、配置摘要和最近日志</p>
+          <p>设置、服务状态和最近日志</p>
         </div>
         <div class="inline-actions admin-actions">
           <button type="button" id="refreshAdmin">刷新</button>
@@ -19,16 +19,23 @@
         </div>
       </header>
 
+      <div class="admin-tabs" role="tablist">
+        <button class="admin-tab active" data-admin-tab="settings" type="button">设置</button>
+        <button class="admin-tab" data-admin-tab="status" type="button">状态</button>
+        <button class="admin-tab" data-admin-tab="logs" type="button">日志</button>
+      </div>
+
       <section class="admin-grid">
-        <section class="admin-panel">
+        <section class="admin-panel admin-tab-panel active" data-admin-panel="settings">
+          <iframe class="settings-frame" src="/?settings=1" title="设置"></iframe>
+        </section>
+        <section class="admin-panel admin-tab-panel" data-admin-panel="status">
           <h2>服务状态</h2>
           <pre id="statusBox">加载中...</pre>
         </section>
-        <section class="admin-panel">
+        <section class="admin-panel admin-tab-panel" data-admin-panel="logs">
           <h2>应用日志</h2>
           <pre id="appLogBox">加载中...</pre>
-        </section>
-        <section class="admin-panel">
           <h2>GSV 日志</h2>
           <pre id="gsvLogBox">加载中...</pre>
         </section>

@@ -77,6 +77,37 @@ p {
   background: var(--line);
 }
 
+.chat-shell {
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--panel);
+}
+
+.chat-shell .chat-pane {
+  border-right: 0;
+}
+
+.chat-shell .settings-pane {
+  display: none;
+}
+
+body.settings-only .shell {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
+  background: #fbfcfd;
+}
+
+body.settings-only .chat-pane {
+  display: none;
+}
+
+body.settings-only .settings-pane {
+  display: block;
+  min-height: 100vh;
+}
+
 .chat-pane,
 .settings-pane {
   min-width: 0;
@@ -139,6 +170,66 @@ p {
   white-space: nowrap;
   color: var(--muted);
   font-size: 13px;
+}
+
+.speech-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.speech-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.speech-toggle-ui {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.16s ease;
+}
+
+.speech-toggle-ui::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(23 32 38 / 18%);
+  transition: transform 0.16s ease;
+}
+
+.speech-toggle input:checked + .speech-toggle-ui {
+  background: var(--accent);
+}
+
+.speech-toggle input:checked + .speech-toggle-ui::after {
+  transform: translateX(12px);
+}
+
+.speech-toggle:focus-within {
+  outline: 2px solid rgb(15 118 110 / 18%);
+  border-color: var(--accent);
+}
+
+.speech-toggle-text {
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .messages {
@@ -356,78 +447,6 @@ p {
   margin-bottom: 6px;
 }
 
-.switch-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.switch-copy {
-  min-width: 0;
-}
-
-.switch-copy .field-head {
-  margin-bottom: 2px;
-}
-
-.switch-note {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.switch-field input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.switch-ui {
-  position: relative;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface-strong);
-  transition: background 0.16s ease, border-color 0.16s ease;
-}
-
-.switch-ui::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(23 32 38 / 18%);
-  transition: transform 0.16s ease;
-}
-
-.switch-field input:checked + .switch-ui {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.switch-field input:checked + .switch-ui::after {
-  transform: translateX(18px);
-}
-
-.switch-field:focus-within {
-  outline: 2px solid rgb(15 118 110 / 18%);
-  border-color: var(--accent);
-}
-
 .field-name {
   min-width: 0;
   color: var(--muted);
@@ -532,11 +551,50 @@ p {
   gap: 14px;
 }
 
+.admin-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.admin-tab {
+  background: var(--panel);
+  font-weight: 650;
+}
+
+.admin-tab.active {
+  background: #edf8f5;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-tab-panel {
+  display: none;
+}
+
+.admin-tab-panel.active {
+  display: block;
+}
+
 .admin-panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px;
+}
+
+.admin-panel:has(.settings-frame) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-frame {
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - 155px);
+  border: 0;
+  background: #fbfcfd;
 }
 
 .admin-panel h2 {

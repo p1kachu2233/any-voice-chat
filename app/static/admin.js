@@ -31,4 +31,12 @@ async function refreshAdmin() {
 }
 
 document.querySelector("#refreshAdmin").addEventListener("click", refreshAdmin);
+document.querySelectorAll(".admin-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".admin-tab").forEach((item) => item.classList.remove("active"));
+    document.querySelectorAll(".admin-tab-panel").forEach((item) => item.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelector(`[data-admin-panel="${tab.dataset.adminTab}"]`).classList.add("active");
+  });
+});
 refreshAdmin();

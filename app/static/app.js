@@ -6,9 +6,14 @@ const messageInput = document.querySelector("#messageInput");
 const recordButton = document.querySelector("#recordButton");
 const recordIcon = document.querySelector("#recordIcon");
 const replyAudio = document.querySelector("#replyAudio");
+const speechToggle = document.querySelector("#speechToggle");
 const helpTooltip = document.createElement("div");
 helpTooltip.className = "help-tooltip";
 document.body.appendChild(helpTooltip);
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get("settings") === "1") {
+  document.body.classList.add("settings-only");
+}
 
 let settings = {};
 let history = [];
@@ -464,7 +469,13 @@ function readForm() {
   });
   checkboxFields.forEach((key) => {
     const field = form.elements[key];
-    if (field) data[key] = field.checked;
+    if (key === "enable_gsv_tts" && speechToggle) {
+      data[key] = speechToggle.checked;
+    } else if (field) {
+      data[key] = field.checked;
+    } else if (Object.prototype.hasOwnProperty.call(settings, key)) {
+      data[key] = settings[key];
+    }
   });
   return data;
 }
@@ -492,9 +503,16 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
+function syncSpeechToggle() {
+  if (speechToggle) {
+    speechToggle.checked = settings.enable_gsv_tts !== false;
+  }
+}
+
 async function loadSettings() {
   settings = await requestJson("/api/settings");
   fillForm(settings);
+  syncSpeechToggle();
   showEmpty();
 }
 
@@ -505,7 +523,22 @@ async function saveSettings(announce = true) {
     body: JSON.stringify({ settings: readForm() }),
   });
   fillForm(settings);
+  syncSpeechToggle();
   if (announce) setStatus("设置已保存");
+  return settings;
+}
+
+async function saveSpeechSetting(enabled) {
+  const freshSettings = await requestJson("/api/settings");
+  freshSettings.enable_gsv_tts = enabled;
+  settings = await requestJson("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings: freshSettings }),
+  });
+  fillForm(settings);
+  syncSpeechToggle();
+  return settings;
 }
 
 async function runChat(userText) {
@@ -520,7 +553,10 @@ async function runChat(userText) {
   let buffer = "";
 
   try {
-    const currentSettings = await saveSettings(false);
+    settings = await requestJson("/api/settings");
+    fillForm(settings);
+    syncSpeechToggle();
+    const currentSettings = settings;
     const enableSpeech = currentSettings.enable_gsv_tts !== false;
 
     if (enableSpeech) {
@@ -675,6 +711,24 @@ document.querySelectorAll(".tab").forEach((tab) => {
 document.querySelector("#saveSettings").addEventListener("click", () => {
   saveSettings().catch((error) => setStatus(`保存失败：${error.message}`));
 });
+
+if (speechToggle) {
+  speechToggle.addEventListener("change", async () => {
+    const wantsSpeech = speechToggle.checked;
+    try {
+      if (wantsSpeech) {
+        setStatus("检查 GSV 连接");
+        await assertGsvReady();
+      }
+      await saveSpeechSetting(wantsSpeech);
+      setStatus(wantsSpeech ? "语音已开启" : "语音已关闭");
+    } catch (error) {
+      speechToggle.checked = false;
+      await saveSpeechSetting(false).catch(() => {});
+      setStatus(`语音开启失败：${error.message}`);
+    }
+  });
+}
 
 document.querySelector("#checkGsv").addEventListener("click", async () => {
   try {

@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="shell">
+    <main class="shell chat-shell">
       <section class="chat-pane" aria-label="聊天">
         <header class="topbar">
           <div class="brand">
@@ -15,6 +15,11 @@
             <p>ASR -> OpenAI -> GPT-SoVITS</p>
           </div>
           <div class="top-actions">
+            <label class="speech-toggle" id="speechToggleWrap">
+              <input id="speechToggle" type="checkbox" />
+              <span class="speech-toggle-ui" aria-hidden="true"></span>
+              <span class="speech-toggle-text">语音</span>
+            </label>
             <a class="admin-link" href="/admin" target="_blank" rel="noreferrer">后台</a>
             <div class="status" id="statusText">待机</div>
           </div>
@@ -109,18 +114,6 @@
                 <span class="help-icon" tabindex="0" data-tip="本页面连接的 GPT-SoVITS API 地址，默认 http://127.0.0.1:9880。" aria-label="本页面连接的 GPT-SoVITS API 地址，默认 http://127.0.0.1:9880。">i</span>
               </span>
               <input name="gsv_api_url" />
-            </label>
-
-            <label class="switch-field">
-              <span class="switch-copy">
-                <span class="field-head">
-                  <span class="field-name">启用 GSV 语音合成</span>
-                  <span class="help-icon" tabindex="0" data-tip="开启后发送聊天前会检查 GSV 是否已连接；关闭后只输出文字，不请求 TTS。" aria-label="开启后发送聊天前会检查 GSV 是否已连接；关闭后只输出文字，不请求 TTS。">i</span>
-                </span>
-                <span class="switch-note">关闭后可以先调试 OpenAI 文本聊天。</span>
-              </span>
-              <input name="enable_gsv_tts" type="checkbox" />
-              <span class="switch-ui" aria-hidden="true"></span>
             </label>
 
             <div class="action-row">
