@@ -78,7 +78,7 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 
 OpenAI 流式响应必须按 UTF-8 bytes 解码，不要使用 `requests.iter_lines(decode_unicode=True)` 的默认响应编码，否则中文会变成 mojibake。GSV 子进程启动时设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`，避免 Windows 控制台 GBK 编码导致 `'gbk' codec can't encode character`。
 
-聊天语音播放使用 `/api/tts/stream/{stream_id}` 代理 GSV `/tts` 的响应流。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一个代理接口，但 GSV 端会完整生成后才开始返回音频。
+聊天语音播放使用 `/api/tts/stream/{stream_id}` 代理 GSV `/tts` 的响应流。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一个代理接口，但 GSV 端会完整生成后才开始返回音频。前端不要直接把该 URL 塞给 `<audio>` 播放，浏览器对 GSV 的 wav/raw chunk 流不稳定；应通过 `fetch()` 读取流、解析 wav header，并用 Web Audio API 按 PCM chunk 调度播放。
 
 ## GPT-SoVITS 安装注意事项
 

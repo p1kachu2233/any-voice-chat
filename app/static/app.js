@@ -19,6 +19,8 @@ let audioQueue = [];
 let audioPlaying = false;
 let currentObjectUrl = null;
 let pinnedHelpAnchor = null;
+let audioContext = null;
+let streamPlaybackTime = 0;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -142,26 +144,166 @@ function enqueueAudio(event) {
   playNextAudio();
 }
 
-function playNextAudio() {
+async function ensureAudioContext() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+  return audioContext;
+}
+
+function concatBytes(a, b) {
+  if (!a || a.length === 0) return b;
+  const result = new Uint8Array(a.length + b.length);
+  result.set(a, 0);
+  result.set(b, a.length);
+  return result;
+}
+
+function asciiAt(bytes, offset, text) {
+  if (offset + text.length > bytes.length) return false;
+  for (let index = 0; index < text.length; index += 1) {
+    if (bytes[offset + index] !== text.charCodeAt(index)) return false;
+  }
+  return true;
+}
+
+function parseWavHeader(bytes) {
+  if (bytes.length < 44 || !asciiAt(bytes, 0, "RIFF") || !asciiAt(bytes, 8, "WAVE")) {
+    return null;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 12;
+  const info = { channels: 1, sampleRate: 32000, bitsPerSample: 16, dataOffset: 44 };
+  while (offset + 8 <= bytes.length) {
+    const chunkId = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    const chunkSize = view.getUint32(offset + 4, true);
+    const chunkData = offset + 8;
+    if (chunkData + chunkSize > bytes.length && chunkId !== "data") return null;
+
+    if (chunkId === "fmt ") {
+      info.channels = view.getUint16(chunkData + 2, true);
+      info.sampleRate = view.getUint32(chunkData + 4, true);
+      info.bitsPerSample = view.getUint16(chunkData + 14, true);
+    } else if (chunkId === "data") {
+      info.dataOffset = chunkData;
+      return info;
+    }
+    offset = chunkData + chunkSize + (chunkSize % 2);
+  }
+  return null;
+}
+
+function schedulePcmChunk(ctx, bytes, format) {
+  const bytesPerSample = format.bitsPerSample / 8;
+  const frameSize = bytesPerSample * format.channels;
+  const frameCount = Math.floor(bytes.length / frameSize);
+  if (frameCount <= 0 || bytesPerSample !== 2) return;
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, frameCount * frameSize);
+  const buffer = ctx.createBuffer(format.channels, frameCount, format.sampleRate);
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    for (let channel = 0; channel < format.channels; channel += 1) {
+      const sampleOffset = frame * frameSize + channel * bytesPerSample;
+      buffer.getChannelData(channel)[frame] = view.getInt16(sampleOffset, true) / 32768;
+    }
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  streamPlaybackTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
+  source.start(streamPlaybackTime);
+  streamPlaybackTime += buffer.duration;
+}
+
+async function playWavStream(url) {
+  const ctx = await ensureAudioContext();
+  streamPlaybackTime = Math.max(streamPlaybackTime, ctx.currentTime + 0.05);
+
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(await response.text() || "语音流请求失败");
+  }
+
+  const reader = response.body.getReader();
+  let pending = new Uint8Array(0);
+  let format = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    pending = concatBytes(pending, value);
+
+    if (!format) {
+      const parsed = parseWavHeader(pending);
+      if (!parsed) continue;
+      format = parsed;
+      pending = pending.slice(parsed.dataOffset);
+    }
+
+    const frameSize = (format.bitsPerSample / 8) * format.channels;
+    const playableLength = pending.length - (pending.length % frameSize);
+    if (playableLength > 0) {
+      schedulePcmChunk(ctx, pending.slice(0, playableLength), format);
+      pending = pending.slice(playableLength);
+    }
+  }
+
+  if (format && pending.length > 0) {
+    schedulePcmChunk(ctx, pending, format);
+  }
+
+  const waitMs = Math.max(0, streamPlaybackTime - ctx.currentTime) * 1000 + 80;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
+function playElementAudio(audioUrl) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      replyAudio.removeEventListener("ended", onEnded);
+      replyAudio.removeEventListener("error", onError);
+    };
+    const onEnded = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("音频播放失败"));
+    };
+    replyAudio.addEventListener("ended", onEnded, { once: true });
+    replyAudio.addEventListener("error", onError, { once: true });
+    replyAudio.src = audioUrl;
+    replyAudio.play().catch((error) => {
+      cleanup();
+      reject(error);
+    });
+  });
+}
+
+async function playNextAudio() {
   if (audioPlaying || audioQueue.length === 0) return;
   audioPlaying = true;
   const nextUrl = audioQueue.shift();
   currentObjectUrl = nextUrl.startsWith("blob:") ? nextUrl : null;
-  replyAudio.src = nextUrl;
-  replyAudio.play().catch(() => {
+  try {
+    if (nextUrl.includes("/api/tts/stream/")) {
+      await playWavStream(nextUrl);
+    } else {
+      await playElementAudio(nextUrl);
+    }
+  } catch (error) {
+    setStatus(`语音播放失败：${error.message}`);
+  } finally {
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = null;
     audioPlaying = false;
     playNextAudio();
-  });
+  }
 }
-
-replyAudio.addEventListener("ended", () => {
-  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-  currentObjectUrl = null;
-  audioPlaying = false;
-  playNextAudio();
-});
 
 function readForm() {
   const data = {};
@@ -212,6 +354,7 @@ async function runChat(userText) {
 
   busy = true;
   setStatus("模型输出中");
+  await ensureAudioContext().catch(() => {});
   appendMessage("user", text);
   const assistantBubble = createStreamingMessage("assistant");
   let assistantText = "";
@@ -287,6 +430,7 @@ function chooseMimeType() {
 
 async function startRecording() {
   if (busy) return;
+  await ensureAudioContext().catch(() => {});
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   chunks = [];
   const mimeType = chooseMimeType();
