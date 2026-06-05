@@ -32,29 +32,8 @@ async function refreshAdmin() {
   }
 }
 
-function activateAdminTab(name, updateHash = true) {
-  const tabName = name || "settings";
-  document.querySelectorAll(".admin-tab").forEach((item) => {
-    item.classList.toggle("active", item.getAttribute("data-admin-tab") === tabName);
-  });
-  document.querySelectorAll(".admin-tab-panel").forEach((item) => {
-    item.classList.toggle("active", item.getAttribute("data-admin-panel") === tabName);
-  });
-  if (updateHash) {
-    window.history.replaceState(null, "", `#${tabName}`);
-  }
-}
-
 function initAdmin() {
   document.querySelector("#refreshAdmin")?.addEventListener("click", refreshAdmin);
-  document.querySelectorAll(".admin-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      activateAdminTab(tab.getAttribute("data-admin-tab"));
-    });
-  });
-
-  const initialTab = (window.location.hash || "#settings").slice(1);
-  activateAdminTab(initialTab, false);
   refreshAdmin();
 }
 

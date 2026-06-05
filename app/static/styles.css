@@ -371,12 +371,8 @@ body.settings-only .settings-pane {
 }
 
 .settings-status {
-  display: none;
   max-width: 220px;
-}
-
-body.settings-only .settings-status {
-  display: block;
+  text-align: right;
 }
 
 .settings-head h2 {
@@ -513,6 +509,35 @@ body.settings-only .settings-status {
   font-weight: 600;
 }
 
+.gsv-status {
+  margin: -4px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.gsv-status[data-state="ok"] {
+  border-color: #b8d8cb;
+  background: #f0faf6;
+  color: var(--accent);
+}
+
+.gsv-status[data-state="pending"] {
+  border-color: #c8d5dc;
+  background: #f6f9fa;
+  color: var(--muted);
+}
+
+.gsv-status[data-state="error"] {
+  border-color: #f0c5bf;
+  background: #fff5f3;
+  color: var(--danger);
+}
+
 .help-tooltip {
   position: fixed;
   z-index: 100;
@@ -549,14 +574,18 @@ body.settings-only .settings-status {
 }
 
 .admin-actions {
-  width: min(260px, 100%);
-  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: min(340px, 100%);
 }
 
 .admin-actions a {
   display: grid;
   place-items: center;
   min-height: 36px;
+  padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
@@ -575,12 +604,26 @@ body.settings-only .settings-status {
   margin-bottom: 14px;
 }
 
+.admin-tab-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .admin-tab {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--panel);
+  cursor: pointer;
   font-weight: 650;
 }
 
-.admin-tab.active {
+#admin-tab-settings:checked ~ .admin-tabs [for="admin-tab-settings"],
+#admin-tab-status:checked ~ .admin-tabs [for="admin-tab-status"],
+#admin-tab-logs:checked ~ .admin-tabs [for="admin-tab-logs"] {
   background: #edf8f5;
   border-color: var(--accent);
   color: var(--accent);
@@ -590,7 +633,9 @@ body.settings-only .settings-status {
   display: none;
 }
 
-.admin-tab-panel.active {
+#admin-tab-settings:checked ~ .admin-grid [data-admin-panel="settings"],
+#admin-tab-status:checked ~ .admin-grid [data-admin-panel="status"],
+#admin-tab-logs:checked ~ .admin-grid [data-admin-panel="logs"] {
   display: block;
 }
 
@@ -601,7 +646,7 @@ body.settings-only .settings-status {
   padding: 14px;
 }
 
-.admin-panel:has(.settings-frame) {
+.settings-admin-panel {
   padding: 0;
   overflow: hidden;
 }

@@ -13,20 +13,24 @@
           <h1>后台</h1>
           <p>设置、服务状态和最近日志</p>
         </div>
-        <div class="inline-actions admin-actions">
+        <div class="admin-actions">
           <button type="button" id="refreshAdmin">刷新</button>
           <a href="/">返回聊天</a>
         </div>
       </header>
 
+      <input class="admin-tab-input" id="admin-tab-settings" name="admin-tab" type="radio" checked />
+      <input class="admin-tab-input" id="admin-tab-status" name="admin-tab" type="radio" />
+      <input class="admin-tab-input" id="admin-tab-logs" name="admin-tab" type="radio" />
+
       <div class="admin-tabs" role="tablist">
-        <button class="admin-tab active" data-admin-tab="settings" type="button">设置</button>
-        <button class="admin-tab" data-admin-tab="status" type="button">状态</button>
-        <button class="admin-tab" data-admin-tab="logs" type="button">日志</button>
+        <label class="admin-tab" for="admin-tab-settings" role="tab">设置</label>
+        <label class="admin-tab" for="admin-tab-status" role="tab">状态</label>
+        <label class="admin-tab" for="admin-tab-logs" role="tab">日志</label>
       </div>
 
       <section class="admin-grid">
-        <section class="admin-panel admin-tab-panel active" data-admin-panel="settings">
+        <section class="admin-panel admin-tab-panel settings-admin-panel" data-admin-panel="settings">
           <iframe class="settings-frame" src="/?settings=1" title="设置"></iframe>
         </section>
         <section class="admin-panel admin-tab-panel" data-admin-panel="status">
