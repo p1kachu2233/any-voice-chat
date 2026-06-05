@@ -55,6 +55,23 @@ def _stream_event(event: str, data: dict[str, Any]) -> str:
     return json.dumps({"event": event, **data}, ensure_ascii=False) + "\n"
 
 
+def _warmup_gsv(settings: dict[str, Any]) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    bytes_read = 0
+    audio = stream_synthesize(settings, "你好。")
+    try:
+        for chunk in audio.response.iter_content(chunk_size=8192):
+            if chunk:
+                bytes_read += len(chunk)
+    finally:
+        audio.response.close()
+    return {
+        "ok": True,
+        "bytes": bytes_read,
+        "elapsed_seconds": round(time.perf_counter() - started_at, 2),
+    }
+
+
 def _cleanup_tts_streams() -> None:
     now = time.time()
     expired = [
@@ -173,43 +190,17 @@ def start_gsv(payload: SettingsPayload | None = None):
     if not result.get("ok"):
         log_exception("gsv.start", RuntimeError(str(result)))
         raise HTTPException(status_code=400, detail=result)
+    try:
+        result["warmup"] = _warmup_gsv(settings)
+    except Exception as exc:
+        log_exception("gsv.warmup", exc)
+        raise HTTPException(status_code=400, detail=f"GSV 已连接，但预热失败：{exc}") from exc
     return result
 
 
 @app.post("/api/gsv/stop")
 def stop_gsv():
     return stop_gsv_api(load_settings())
-
-
-@app.post("/api/gsv/warmup")
-def warmup_gsv():
-    settings = load_settings()
-    gsv_health = check_gsv_api(settings)
-    if not gsv_health.get("ok"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"GSV 未连接：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
-        )
-
-    started_at = time.perf_counter()
-    bytes_read = 0
-    try:
-        audio = stream_synthesize(settings, "你好。")
-        try:
-            for chunk in audio.response.iter_content(chunk_size=8192):
-                if chunk:
-                    bytes_read += len(chunk)
-        finally:
-            audio.response.close()
-    except Exception as exc:
-        log_exception("gsv.warmup", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return {
-        "ok": True,
-        "bytes": bytes_read,
-        "elapsed_seconds": round(time.perf_counter() - started_at, 2),
-    }
 
 
 @app.post("/api/asr")

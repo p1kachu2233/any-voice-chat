@@ -12,7 +12,8 @@ const helpTooltip = document.createElement("div");
 helpTooltip.className = "help-tooltip";
 document.body.appendChild(helpTooltip);
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get("settings") === "1") {
+const isSettingsOnly = urlParams.get("settings") === "1";
+if (isSettingsOnly) {
   document.body.classList.add("settings-only");
 }
 
@@ -41,9 +42,9 @@ const checkboxFields = new Set(["enable_gsv_tts"]);
 
 function setStatus(text) {
   if (statusText) statusText.textContent = text;
-  document.querySelectorAll("[data-status-text]").forEach((item) => {
-    item.textContent = text;
-  });
+  if (isSettingsOnly && window.parent !== window) {
+    window.parent.postMessage({ type: "admin-status", text }, window.location.origin);
+  }
 }
 
 function setGsvStatus(text, state = "neutral") {
@@ -759,7 +760,7 @@ document.querySelector("#checkGsv").addEventListener("click", async () => {
 
 document.querySelector("#startGsv").addEventListener("click", async () => {
   try {
-    setGsvStatus("正在启动 GSV", "pending");
+    setGsvStatus("正在启动并预热 GSV", "pending");
     const current = readForm();
     const result = await requestJson("/api/gsv/start", {
       method: "POST",
@@ -767,7 +768,8 @@ document.querySelector("#startGsv").addEventListener("click", async () => {
       body: JSON.stringify({ settings: current }),
     });
     settings = current;
-    setGsvStatus(result.already_running ? "GSV 已在运行" : "GSV 已启动", "ok");
+    const warmupText = result.warmup ? `，预热 ${result.warmup.elapsed_seconds}s` : "";
+    setGsvStatus(result.already_running ? `GSV 已在运行${warmupText}` : `GSV 已启动${warmupText}`, "ok");
   } catch (error) {
     setGsvStatus(`启动失败：${error.message}`, "error");
   }
@@ -779,17 +781,6 @@ document.querySelector("#stopGsv").addEventListener("click", async () => {
     setGsvStatus(result.stopped ? "GSV 已停止" : "没有由本页面启动的 GSV 进程", result.stopped ? "ok" : "neutral");
   } catch (error) {
     setGsvStatus(`停止失败：${error.message}`, "error");
-  }
-});
-
-document.querySelector("#warmupGsv").addEventListener("click", async () => {
-  try {
-    await saveSettings(false);
-    setGsvStatus("正在预热 GSV", "pending");
-    const result = await requestJson("/api/gsv/warmup", { method: "POST" });
-    setGsvStatus(`GSV 预热完成：${result.elapsed_seconds}s`, "ok");
-  } catch (error) {
-    setGsvStatus(`预热失败：${error.message}`, "error");
   }
 });
 
