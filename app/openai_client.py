@@ -76,6 +76,7 @@ def stream_chat_completion(
     user_text: str,
     history: list[dict[str, str]] | None = None,
     stop_check=None,
+    response_hook=None,
 ):
     with requests.post(
         _build_url(settings.get("openai_base_url", "")),
@@ -91,28 +92,34 @@ def stream_chat_completion(
                 detail = response.text
             raise RuntimeError(f"OpenAI 请求失败：{detail}")
 
-        for line_bytes in response.iter_lines(decode_unicode=False):
-            if stop_check and stop_check():
-                break
-            if not line_bytes:
-                continue
-            line = line_bytes.decode("utf-8", errors="replace")
-            if not line:
-                continue
-            if line.startswith("data: "):
-                line = line[6:]
-            if line == "[DONE]":
-                break
-            try:
-                data = json.loads(line)
-            except ValueError:
-                continue
-            choices = data.get("choices") or []
-            if not choices:
-                continue
-            delta = choices[0].get("delta") or {}
-            content = delta.get("content")
-            if content:
+        if response_hook:
+            response_hook(response)
+        try:
+            for line_bytes in response.iter_lines(decode_unicode=False):
                 if stop_check and stop_check():
                     break
-                yield content
+                if not line_bytes:
+                    continue
+                line = line_bytes.decode("utf-8", errors="replace")
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    line = line[6:]
+                if line == "[DONE]":
+                    break
+                try:
+                    data = json.loads(line)
+                except ValueError:
+                    continue
+                choices = data.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    if stop_check and stop_check():
+                        break
+                    yield content
+        finally:
+            if response_hook:
+                response_hook(None)

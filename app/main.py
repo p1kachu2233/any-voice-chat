@@ -32,8 +32,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _tts_stream_lock = threading.Lock()
 _tts_streams: dict[str, dict[str, Any]] = {}
-_chat_cancel_lock = threading.Lock()
+_chat_cancel_lock = threading.RLock()
 _cancelled_chat_ids: dict[str, float] = {}
+_active_chat_resources: dict[str, list[Any]] = {}
 
 
 class SettingsPayload(BaseModel):
@@ -113,9 +114,16 @@ def _cleanup_cancelled_chats() -> None:
 
 
 def _cancel_chat(chat_id: str) -> None:
+    resources: list[Any] = []
     with _chat_cancel_lock:
         _cleanup_cancelled_chats()
         _cancelled_chat_ids[chat_id] = time.time()
+        resources = _active_chat_resources.pop(chat_id, [])
+    for resource in resources:
+        try:
+            resource.close()
+        except Exception:
+            pass
 
 
 def _is_chat_cancelled(chat_id: Optional[str]) -> bool:
@@ -131,9 +139,49 @@ def _finish_chat(chat_id: Optional[str]) -> None:
         return
     with _chat_cancel_lock:
         _cancelled_chat_ids.pop(chat_id, None)
+        _active_chat_resources.pop(chat_id, None)
 
 
-def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text: bool = False, stop_check=None):
+def _track_chat_resource(chat_id: Optional[str], resource: Any) -> bool:
+    if not chat_id:
+        return True
+    with _chat_cancel_lock:
+        if _is_chat_cancelled(chat_id):
+            should_close = True
+        else:
+            _active_chat_resources.setdefault(chat_id, []).append(resource)
+            should_close = False
+    if should_close:
+        try:
+            resource.close()
+        except Exception:
+            pass
+        return False
+    return True
+
+
+def _untrack_chat_resource(chat_id: Optional[str], resource: Any) -> None:
+    if not chat_id:
+        return
+    with _chat_cancel_lock:
+        resources = _active_chat_resources.get(chat_id)
+        if not resources:
+            return
+        try:
+            resources.remove(resource)
+        except ValueError:
+            return
+        if not resources:
+            _active_chat_resources.pop(chat_id, None)
+
+
+def _iter_tts_stream_events(
+    settings: dict[str, Any],
+    segment: str,
+    reveal_text: bool = False,
+    stop_check=None,
+    chat_id: Optional[str] = None,
+):
     audio_id = uuid.uuid4().hex
     tts_segment = segment.strip()
     if not tts_segment:
@@ -149,6 +197,8 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
         if reveal_text:
             yield _stream_event("text_delta", {"delta": segment})
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
+        return
+    if not _track_chat_resource(chat_id, audio.response):
         return
 
     if reveal_text:
@@ -173,6 +223,7 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
         log_exception("tts.stream.read", exc)
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
     finally:
+        _untrack_chat_resource(chat_id, audio.response)
         audio.response.close()
     yield _stream_event("audio_end", {"audio_id": audio_id})
 
@@ -359,6 +410,18 @@ def chat_stream(payload: ChatPayload):
         def cancelled():
             return _is_chat_cancelled(chat_id)
 
+        openai_response = None
+
+        def track_openai_response(response):
+            nonlocal openai_response
+            if response is None:
+                if openai_response is not None:
+                    _untrack_chat_resource(chat_id, openai_response)
+                    openai_response = None
+                return
+            openai_response = response
+            _track_chat_resource(chat_id, response)
+
         if cancelled():
             _finish_chat(chat_id)
             return
@@ -376,7 +439,13 @@ def chat_stream(payload: ChatPayload):
 
         yield _stream_event("start", {"user_text": user_text})
         try:
-            for delta in stream_chat_completion(settings, user_text, payload.history, stop_check=cancelled):
+            for delta in stream_chat_completion(
+                settings,
+                user_text,
+                payload.history,
+                stop_check=cancelled,
+                response_hook=track_openai_response,
+            ):
                 if cancelled():
                     return
                 assistant_text += delta
@@ -397,7 +466,7 @@ def chat_stream(payload: ChatPayload):
                         break
                     if speak_enabled:
                         if _has_speakable_text(segment):
-                            yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled)
+                            yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled, chat_id=chat_id)
                         elif not reveal_text_immediately:
                             yield _stream_event("text_delta", {"delta": segment})
 
@@ -415,7 +484,7 @@ def chat_stream(payload: ChatPayload):
                     break
                 if speak_enabled:
                     if _has_speakable_text(segment):
-                        yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled)
+                        yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled, chat_id=chat_id)
                     elif not reveal_text_immediately:
                         yield _stream_event("text_delta", {"delta": segment})
                 if not tts_buffer:
