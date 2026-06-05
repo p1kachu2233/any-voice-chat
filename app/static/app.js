@@ -617,6 +617,7 @@ async function runChat(userText) {
   let assistantBubble = null;
   let typewriter = null;
   let assistantText = "";
+  let finalAssistantText = "";
   let buffer = "";
 
   try {
@@ -693,7 +694,7 @@ async function runChat(userText) {
         } else if (event.event === "error") {
           throw new Error(event.message);
         } else if (event.event === "done") {
-          assistantText = event.assistant_text || assistantText;
+          finalAssistantText = event.assistant_text || finalAssistantText;
         }
       }
     }
@@ -701,7 +702,7 @@ async function runChat(userText) {
     if (buffer.trim()) {
       const event = JSON.parse(buffer);
       if (event.event === "done") {
-        assistantText = event.assistant_text || assistantText;
+        finalAssistantText = event.assistant_text || finalAssistantText;
       }
     }
 
@@ -709,10 +710,10 @@ async function runChat(userText) {
       if (speechSyncText) {
         await waitForScheduledAudioEnd();
       }
-      await typewriter.finish(assistantText);
+      await typewriter.finish(speechSyncText ? "" : finalAssistantText || assistantText);
     }
     history.push({ role: "user", content: text });
-    history.push({ role: "assistant", content: assistantText });
+    history.push({ role: "assistant", content: finalAssistantText || assistantText });
     const audioStillPlaying = audioContext && streamPlaybackTime > audioContext.currentTime + 0.2;
     setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : "完成");
     if (audioStillPlaying) markCompleteAfterInlineAudio();

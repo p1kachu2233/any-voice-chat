@@ -49,6 +49,7 @@ class TtsPayload(BaseModel):
 
 _sentence_end_re = re.compile(r"[。！？!?；;\n]")
 _soft_split_re = re.compile(r"[，,、：:]")
+_continued_punctuation_chars = set("。！？!?；;，,、：:…—-~～.．)]}）】」』”’\"'")
 SOFT_TTS_SEGMENT_CHARS = 60
 FORCE_TTS_SEGMENT_CHARS = 90
 
@@ -136,7 +137,7 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
 
     hard_matches = _sentence_end_re.finditer(buffer)
     for match in hard_matches:
-        end = match.end()
+        end = _extend_punctuation_boundary(buffer, match.end())
         segment = buffer[:end].strip()
         rest = buffer[end:]
         if _tts_text_len(segment) >= min_chars:
@@ -145,7 +146,7 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
     if _tts_text_len(text) >= SOFT_TTS_SEGMENT_CHARS:
         soft_matches = list(_soft_split_re.finditer(buffer))
         if soft_matches:
-            end = soft_matches[-1].end()
+            end = _extend_punctuation_boundary(buffer, soft_matches[-1].end())
             segment = buffer[:end].strip()
             rest = buffer[end:]
             if _tts_text_len(segment) >= min_chars:
@@ -161,6 +162,12 @@ def _pop_tts_segment(buffer: str, min_chars: int = 10, final: bool = False) -> t
 
 def _tts_text_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
+
+
+def _extend_punctuation_boundary(buffer: str, end: int) -> int:
+    while end < len(buffer) and buffer[end] in _continued_punctuation_chars:
+        end += 1
+    return end
 
 
 @app.get("/")
