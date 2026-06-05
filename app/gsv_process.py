@@ -6,6 +6,7 @@ import threading
 import time
 import os
 import requests
+import yaml
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -18,6 +19,9 @@ GSV_DIR = ROOT_DIR / "GPT-SoVITS"
 RUNTIME_DIR = ROOT_DIR / "runtime"
 GSV_LOG_PATH = RUNTIME_DIR / "gsv_api.log"
 DEFAULT_TTS_CONFIG = "GPT_SoVITS/configs/tts_infer.yaml"
+RUNTIME_TTS_CONFIG = RUNTIME_DIR / "tts_infer_runtime.yaml"
+VALID_GSV_VERSIONS = {"v1", "v2", "v2Pro", "v2ProPlus", "v3", "v4"}
+VALID_GSV_DEVICES = {"cuda", "cpu"}
 
 _process_lock = threading.Lock()
 _process: subprocess.Popen | None = None
@@ -37,6 +41,55 @@ def _is_owned_process_running() -> bool:
     return _process is not None and _process.poll() is None
 
 
+def prepare_tts_config(settings: dict[str, Any]) -> dict[str, Any]:
+    source_path = GSV_DIR / DEFAULT_TTS_CONFIG
+    version = settings.get("gsv_version") or "v2"
+    if version not in VALID_GSV_VERSIONS:
+        raise ValueError(f"GSV 版本不支持：{version}")
+    device = settings.get("gsv_device") or "cuda"
+    if device not in VALID_GSV_DEVICES:
+        raise ValueError(f"GSV Device 不支持：{device}")
+    if not source_path.exists():
+        raise FileNotFoundError(f"TTS 配置文件不存在：{source_path}")
+
+    with source_path.open("r", encoding="utf-8") as file:
+        config_data = yaml.safe_load(file) or {}
+
+    if version not in config_data:
+        raise ValueError(f"TTS 配置文件中没有版本示例：{version}")
+
+    selected = dict(config_data.get("custom") or {})
+    version_defaults = dict(config_data[version] or {})
+    selected["version"] = version
+    selected["device"] = device
+    selected["is_half"] = bool(settings.get("gsv_is_half"))
+    selected["t2s_weights_path"] = version_defaults.get("t2s_weights_path", selected.get("t2s_weights_path", ""))
+    selected["vits_weights_path"] = version_defaults.get("vits_weights_path", selected.get("vits_weights_path", ""))
+
+    gpt_path = (settings.get("gpt_weights_path") or "").strip()
+    sovits_path = (settings.get("sovits_weights_path") or "").strip()
+    if gpt_path:
+        selected["t2s_weights_path"] = gpt_path
+    if sovits_path:
+        selected["vits_weights_path"] = sovits_path
+
+    config_data = {"custom": selected}
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    with RUNTIME_TTS_CONFIG.open("w", encoding="utf-8") as file:
+        yaml.safe_dump(config_data, file, allow_unicode=True, sort_keys=False)
+
+    return {
+        "source_path": str(source_path),
+        "runtime_path": str(RUNTIME_TTS_CONFIG),
+        "section": "custom",
+        "version": selected.get("version"),
+        "device": selected.get("device"),
+        "is_half": selected.get("is_half"),
+        "t2s_weights_path": selected.get("t2s_weights_path"),
+        "vits_weights_path": selected.get("vits_weights_path"),
+    }
+
+
 def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
     global _process
 
@@ -50,8 +103,10 @@ def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
 
         host, port = _parse_local_endpoint(settings)
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        tts_config = prepare_tts_config(settings)
         log_file = GSV_LOG_PATH.open("a", encoding="utf-8")
         log_file.write("\n\n=== Starting GPT-SoVITS API ===\n")
+        log_file.write(f"TTS config: {tts_config}\n")
         log_file.flush()
 
         command = [
@@ -62,7 +117,7 @@ def start_gsv_api(settings: dict[str, Any]) -> dict[str, Any]:
             "-p",
             str(port),
             "-c",
-            DEFAULT_TTS_CONFIG,
+            str(RUNTIME_TTS_CONFIG),
         ]
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
         env = os.environ.copy()

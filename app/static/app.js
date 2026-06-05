@@ -6,6 +6,9 @@ const messageInput = document.querySelector("#messageInput");
 const recordButton = document.querySelector("#recordButton");
 const recordIcon = document.querySelector("#recordIcon");
 const replyAudio = document.querySelector("#replyAudio");
+const helpTooltip = document.createElement("div");
+helpTooltip.className = "help-tooltip";
+document.body.appendChild(helpTooltip);
 
 let settings = {};
 let history = [];
@@ -15,6 +18,7 @@ let busy = false;
 let audioQueue = [];
 let audioPlaying = false;
 let currentObjectUrl = null;
+let pinnedHelpAnchor = null;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -28,6 +32,52 @@ const numericFields = new Set([
 function setStatus(text) {
   statusText.textContent = text;
 }
+
+function setupHelpTips() {
+  document.querySelectorAll(".help-icon").forEach((item) => {
+    item.addEventListener("mouseenter", () => showHelpTooltip(item));
+    item.addEventListener("focus", () => showHelpTooltip(item));
+    item.addEventListener("mouseleave", () => {
+      if (pinnedHelpAnchor !== item) hideHelpTooltip();
+    });
+    item.addEventListener("blur", () => {
+      if (pinnedHelpAnchor !== item) hideHelpTooltip();
+    });
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (pinnedHelpAnchor === item) {
+        pinnedHelpAnchor = null;
+        hideHelpTooltip();
+      } else {
+        pinnedHelpAnchor = item;
+        showHelpTooltip(item);
+      }
+    });
+  });
+}
+
+function showHelpTooltip(anchor) {
+  const text = anchor.dataset.tip || anchor.dataset.help || anchor.getAttribute("aria-label");
+  if (!text) return;
+  helpTooltip.textContent = text;
+  helpTooltip.classList.add("visible");
+  const rect = anchor.getBoundingClientRect();
+  const tooltipRect = helpTooltip.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - tooltipRect.width - 12, Math.max(12, rect.left));
+  const top = Math.min(window.innerHeight - tooltipRect.height - 12, rect.bottom + 8);
+  helpTooltip.style.left = `${left}px`;
+  helpTooltip.style.top = `${top}px`;
+}
+
+function hideHelpTooltip() {
+  helpTooltip.classList.remove("visible");
+}
+
+document.addEventListener("click", () => {
+  pinnedHelpAnchor = null;
+  hideHelpTooltip();
+});
 
 function showEmpty() {
   if (messages.children.length === 0) {
@@ -328,22 +378,6 @@ document.querySelector("#stopGsv").addEventListener("click", async () => {
   }
 });
 
-document.querySelector("#applyModels").addEventListener("click", async () => {
-  try {
-    const current = readForm();
-    const result = await requestJson("/api/gsv/apply-models", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: current }),
-    });
-    settings = current;
-    const applied = (result.applied || []).map((item) => item.model).join(" / ");
-    setStatus(applied ? `GSV 模型已应用：${applied}` : "没有填写权重路径，未切换模型");
-  } catch (error) {
-    setStatus(`应用失败：${error.message}`);
-  }
-});
-
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   runChat(messageInput.value);
@@ -361,4 +395,5 @@ recordButton.addEventListener("click", () => {
   }
 });
 
+setupHelpTips();
 loadSettings().catch((error) => setStatus(`加载设置失败：${error.message}`));

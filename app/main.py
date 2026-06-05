@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.asr_service import convert_to_wav, save_upload, transcribe_audio
-from app.gsv_client import apply_gsv_models, synthesize, synthesize_bytes
+from app.gsv_client import synthesize, synthesize_bytes
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.log_store import APP_LOG_PATH, log_exception, read_tail
 from app.openai_client import chat_completion, stream_chat_completion
@@ -150,17 +150,6 @@ def start_gsv(payload: SettingsPayload | None = None):
 @app.post("/api/gsv/stop")
 def stop_gsv():
     return stop_gsv_api(load_settings())
-
-
-@app.post("/api/gsv/apply-models")
-def apply_models(payload: SettingsPayload | None = None):
-    settings = save_settings(payload.settings) if payload else load_settings()
-    try:
-        result = apply_gsv_models(settings, force=True)
-    except Exception as exc:
-        log_exception("gsv.apply_models", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, **result}
 
 
 @app.post("/api/asr")

@@ -18,6 +18,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "system_prompt": "你是一个适合语音聊天的助手。回答要自然、简洁，像真人对话一样。",
     "asr_language": "zh",
     "gsv_api_url": "http://127.0.0.1:9880",
+    "gsv_version": "v2",
+    "gsv_device": "cuda",
+    "gsv_is_half": True,
     "gpt_weights_path": "",
     "sovits_weights_path": "",
     "ref_audio_path": r"D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav",
@@ -41,6 +44,8 @@ DEFAULT_IF_EMPTY_KEYS = {"ref_audio_path", "prompt_text", "prompt_lang", "text_l
 def _coerce_value(key: str, value: Any) -> Any:
     default = DEFAULT_SETTINGS[key]
     if isinstance(default, bool):
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
     if isinstance(default, int) and not isinstance(default, bool):
         try:

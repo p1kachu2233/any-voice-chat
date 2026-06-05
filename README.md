@@ -1,215 +1,122 @@
 # Any Voice Chat
 
-基于 [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 构建的语音聊天项目。
-
-项目目标流程：
+基于 [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 构建的本地语音聊天项目。
 
 ```text
-语音输入 -> ASR/识别 -> 大模型思考 -> 文本输出 -> TTS/声线克隆 -> 语音输出
+语音输入 -> ASR 识别 -> 大模型回复 -> GPT-SoVITS 语音输出
 ```
 
-当前第一步是先配置 GPT-SoVITS，也就是本项目里的 `GPT-SoVITS` 子模块。后续本项目的 Python 依赖都优先安装到同一个 conda 环境中，避免语音识别、LLM 调用和 TTS 推理之间出现环境割裂。
-
 ## 克隆项目
-
-本项目使用 git submodule 引入 GPT-SoVITS。首次克隆时建议直接拉取子模块：
 
 ```powershell
 git clone --recurse-submodules https://github.com/<your-name>/any-voice-chat.git
 cd any-voice-chat
 ```
 
-如果已经普通克隆了本项目，可以补执行：
+如果已经普通克隆过：
 
 ```powershell
 git submodule update --init --recursive
 ```
 
-## 第一步：配置 GPT-SoVITS 环境
-
-进入 GPT-SoVITS 目录：
+## 配置 GPT-SoVITS 环境
 
 ```powershell
 cd GPT-SoVITS
-```
-
-创建并激活 conda 环境：
-
-```powershell
 conda create -n GPTSoVits python=3.10
 conda activate GPTSoVits
-```
-
-按设备和下载源执行安装脚本：
-
-```powershell
-pwsh -F install.ps1 --Device <CU126|CU128|CPU> --Source <HF|HF-Mirror|ModelScope> [--DownloadUVR5]
-```
-
-如果本机没有安装 PowerShell 7，执行 `pwsh` 时会提示“无法将 pwsh 项识别为 cmdlet”。这时可以先用 Windows 自带的 PowerShell 执行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126|CU128|CPU> -Source <HF|HF-Mirror|ModelScope>
-```
-
-更推荐加上 `-NoProfile`，避免 PowerShell 启动时加载用户配置，导致 conda 初始化脚本和 GPT-SoVITS 安装脚本里的函数名冲突：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device <CU126|CU128|CPU> -Source <HF|HF-Mirror|ModelScope>
-```
-
-也可以安装 PowerShell 7 后继续使用 `pwsh`：
-
-```powershell
-winget install --id Microsoft.PowerShell --source winget
-```
-
-### pyopenjtalk 构建失败
-
-如果安装过程中出现 `Failed to build 'pyopenjtalk'`、`nmake: no such file or directory`、`CMAKE_C_COMPILER not set` 或 `CMAKE_CXX_COMPILER not set`，说明当前 Windows 环境缺少 MSVC C/C++ 编译工具链。
-
-可以安装 Visual Studio 2022 Build Tools：
-
-```powershell
-winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-```
-
-安装完成后重新打开 PowerShell，再执行：
-
-```powershell
-conda activate GPTSoVits
-cd D:\Users\13677\Documents\any-voice-chat\GPT-SoVITS
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Device CU126 -Source ModelScope
 ```
 
-如果使用 Visual Studio Installer 图形界面安装，请勾选 `Desktop development with C++`，并确保包含 MSVC 编译工具和 Windows SDK。
+按自己的设备替换 `-Device`：
 
-参数说明：
+- `CU126`：CUDA 12.6
+- `CU128`：CUDA 12.8
+- `CPU`：仅使用 CPU
 
-- `--Device CU126`：使用 CUDA 12.6。
-- `--Device CU128`：使用 CUDA 12.8。
-- `--Device CPU`：不使用 GPU，仅使用 CPU。
-- `--Source HF`：从 Hugging Face 下载模型和依赖资源。
-- `--Source HF-Mirror`：从 Hugging Face 镜像下载，适合 Hugging Face 访问不稳定时使用。
-- `--Source ModelScope`：从 ModelScope 下载。
-- `--DownloadUVR5`：可选，下载 UVR5 相关模型，用于人声/伴奏分离、混响移除等功能。
+按网络情况替换 `-Source`：
 
-示例：
+- `HF`
+- `HF-Mirror`
+- `ModelScope`
 
-```powershell
-pwsh -F install.ps1 --Device CU126 --Source ModelScope --DownloadUVR5
-```
-
-或仅使用 CPU：
+如果需要 UVR5，追加：
 
 ```powershell
-pwsh -F install.ps1 --Device CPU --Source ModelScope
+-DownloadUVR5
 ```
 
-## 环境约定
+如果安装 `pyopenjtalk` 时提示缺少 `nmake`、`CMAKE_C_COMPILER` 或 `CMAKE_CXX_COMPILER`，请安装 Visual Studio 2022 Build Tools，并勾选 `Desktop development with C++`。
 
-后续开发本项目时，默认使用同一个 conda 环境：
+## 启动网页
+
+回到项目根目录：
 
 ```powershell
-conda activate GPTSoVits
-```
-
-项目新增的 ASR、大模型调用、音频处理、TTS 推理等 Python 依赖，也应安装到 `GPTSoVits` 环境中。
-
-如果后续需要记录额外依赖，可以在根目录新增项目自己的依赖文件，例如：
-
-```text
-requirements.txt
-```
-
-但安装时仍建议先激活 `GPTSoVits` 环境。
-
-## 启动网页版聊天
-
-本项目提供一个本地 Web 页面，用于串联：
-
-```text
-浏览器录音 -> GPT-SoVITS/tools/asr 转写 -> OpenAI 兼容流式聊天接口 -> GPT-SoVITS API 分段合成语音
-```
-
-激活 conda 环境后，使用一个 Python 命令启动本项目：
-
-```powershell
+cd D:\Users\13677\Documents\any-voice-chat
 conda activate GPTSoVits
 python start.py
 ```
 
-然后访问：
+在 Codex 的环境设置里，可以把 Windows 启动脚本设置为：
+
+```powershell
+cd "$env:CODEX_WORKTREE_PATH"
+conda run -n GPTSoVits python start.py
+```
+
+打开：
 
 ```text
 http://127.0.0.1:7860
 ```
 
-网页右侧的 GSV 设置区提供 `启动 GSV` 按钮，会在后台启动：
+## 页面设置
 
-```text
-GPT-SoVITS/api_v2.py
-```
+`OpenAI` 页签填写：
 
-如果希望启动网页时顺手启动 GSV API，可以执行：
+- API Key
+- Base URL
+- Model
+- System Prompt
 
-```powershell
-python start.py --with-gsv
-```
+`GSV` 页签填写：
 
-网页右侧可以填写并保存：
+- GSV API URL，默认 `http://127.0.0.1:9880`
+- GSV 版本，可选 `v1`、`v2`、`v2Pro`、`v2ProPlus`、`v3`、`v4`
+- Device 和 Half Precision
+- GPT 权重路径，可选；不填则使用所选版本的默认路径
+- SoVITS 权重路径，可选；不填则使用所选版本的默认路径
+- 参考音频、参考文本、语种和生成参数
 
-- OpenAI API Key、Base URL、模型名和 System Prompt。
-- GSV API 地址，并可从页面启动或检查 GSV API。
-- 训练后的 GPT 权重路径和 SoVITS 权重路径。点击 `应用模型` 不会重启 GSV，只会让已运行的 GSV 重新加载填写的权重路径；未填写时不会切换。
-- 参考音频路径、参考文本、参考语种和输出语种。
-- ASR 语言。
+修改 GSV 版本、Device、Half Precision 或权重路径后，需要先停止 GSV，再重新启动 GSV。
 
-默认参考音频为：
+默认参考音频：
 
 ```text
 D:\jjy_cut\cut_1_voice\mp4_360P_xtdowner.com_新华社采访完整版，鞠婧祎：“我不太能够接受原地踏步，我需要学习，需要汲取更多的能量，在这个过程中，我一定会成为更好的人”-00.00.16.577-00.00.19.288-seg01_Vocals.wav
 ```
 
-默认参考文本为：
+默认参考文本：
 
 ```text
 新华社的朋友们大家好，我是鞠婧祎
 ```
 
-后台页面：
+`ASR` 页签选择识别语言。
+
+## 后台
 
 ```text
 http://127.0.0.1:7860/admin
 ```
 
-后台页面可以查看服务状态、应用错误日志和 GSV API 日志。GSV 日志默认写入：
+后台可以查看服务状态和最近日志。
 
-```text
-runtime/gsv_api.log
-```
-
-应用错误日志默认写入：
-
-```text
-runtime/app.log
-```
-
-这些设置会保存到本地：
+个人设置会保存到：
 
 ```text
 config/user_settings.json
 ```
 
-该文件包含 API Key 等个人配置，已被 `.gitignore` 忽略，不应提交到仓库。
-
-### 流式输出与分段语音
-
-聊天接口默认使用流式输出：网页会边接收大模型文本边显示。后端会按句号、问号、感叹号、分号等边界拆分回复文本，并把每段文本送到 GPT-SoVITS 合成；浏览器收到每段音频后会排队连续播放。聊天流里的分段语音直接以内存音频返回给前端播放，不再保存到 `runtime/outputs`。
-
-Windows 下如果 GPT-SoVITS 进程不是以 UTF-8 环境启动，可能出现类似 `'gbk' codec can't encode character` 的错误。本项目从网页启动 GSV 时会设置 `PYTHONIOENCODING=utf-8` 和 `PYTHONUTF8=1`。如果 GSV 是之前手动启动的，请停止后从网页重新启动。
-
-## 参考
-
-- GPT-SoVITS 官方仓库：[RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
-- GPT-SoVITS 本地文档：`GPT-SoVITS/docs/cn/README.md`
+该文件包含 API Key，已被 `.gitignore` 忽略，不应提交。

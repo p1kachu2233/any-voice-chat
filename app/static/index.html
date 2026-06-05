@@ -8,14 +8,14 @@
   </head>
   <body>
     <main class="shell">
-      <section class="chat-pane">
+      <section class="chat-pane" aria-label="聊天">
         <header class="topbar">
-          <div>
+          <div class="brand">
             <h1>Any Voice Chat</h1>
             <p>ASR -> OpenAI -> GPT-SoVITS</p>
           </div>
           <div class="top-actions">
-            <a href="/admin" target="_blank" rel="noreferrer">后台</a>
+            <a class="admin-link" href="/admin" target="_blank" rel="noreferrer">后台</a>
             <div class="status" id="statusText">待机</div>
           </div>
         </header>
@@ -33,13 +33,16 @@
         <audio id="replyAudio" controls></audio>
       </section>
 
-      <aside class="settings-pane">
+      <aside class="settings-pane" aria-label="设置">
         <div class="settings-head">
-          <h2>设置</h2>
-          <button type="button" id="saveSettings">保存</button>
+          <div>
+            <h2>设置</h2>
+            <p>本地保存，不提交仓库</p>
+          </div>
+          <button class="save-button" type="button" id="saveSettings">保存</button>
         </div>
 
-        <div class="tabs">
+        <div class="tabs" role="tablist">
           <button class="tab active" data-tab="openai" type="button">OpenAI</button>
           <button class="tab" data-tab="gsv" type="button">GSV</button>
           <button class="tab" data-tab="asr" type="button">ASR</button>
@@ -47,70 +50,163 @@
 
         <form class="settings-form" id="settingsForm">
           <section class="tab-panel active" data-panel="openai">
-            <label>
-              API Key
+            <div class="section-title">
+              <h3>模型接口</h3>
+            </div>
+
+            <label class="field span-2">
+              <span class="field-head">
+                <span class="field-name">API Key</span>
+                <span class="help-icon" tabindex="0" data-tip="OpenAI 或兼容服务的 API Key，只保存在本机 config/user_settings.json。" aria-label="OpenAI 或兼容服务的 API Key，只保存在本机 config/user_settings.json。">i</span>
+              </span>
               <input name="openai_api_key" type="password" autocomplete="off" />
             </label>
-            <label>
-              Base URL
-              <input name="openai_base_url" />
-            </label>
-            <label>
-              Model
-              <input name="openai_model" />
-            </label>
-            <label>
-              Temperature
-              <input name="openai_temperature" type="number" min="0" max="2" step="0.1" />
-            </label>
-            <label>
-              System Prompt
+
+            <div class="field-grid">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Base URL</span>
+                  <span class="help-icon" tabindex="0" data-tip="OpenAI 兼容接口地址，例如 https://api.openai.com/v1。" aria-label="OpenAI 兼容接口地址，例如 https://api.openai.com/v1。">i</span>
+                </span>
+                <input name="openai_base_url" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Model</span>
+                  <span class="help-icon" tabindex="0" data-tip="聊天模型名称，例如 gpt-4o-mini，或你的兼容服务模型名。" aria-label="聊天模型名称，例如 gpt-4o-mini，或你的兼容服务模型名。">i</span>
+                </span>
+                <input name="openai_model" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Temperature</span>
+                  <span class="help-icon" tabindex="0" data-tip="回复随机性，数值越高越发散。" aria-label="回复随机性，数值越高越发散。">i</span>
+                </span>
+                <input name="openai_temperature" type="number" min="0" max="2" step="0.1" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">System Prompt</span>
+                <span class="help-icon" tabindex="0" data-tip="用于控制助手说话风格和角色设定。" aria-label="用于控制助手说话风格和角色设定。">i</span>
+              </span>
               <textarea name="system_prompt" rows="5"></textarea>
             </label>
           </section>
 
           <section class="tab-panel" data-panel="gsv">
-            <div class="hint">
-              `启动 GSV` 会在后台启动 GPT-SoVITS API。`应用模型` 不会重启服务，只会把下方 GPT/SoVITS 权重路径发送给已运行的 GSV，让它重新加载指定训练模型；未填写权重路径时不会切换模型。
+            <div class="section-title">
+              <h3>服务</h3>
+              <p>启动相关配置修改后，需要停止 GSV 再重新启动。</p>
             </div>
-            <label>
-              GSV API URL
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">GSV API URL</span>
+                <span class="help-icon" tabindex="0" data-tip="本页面连接的 GPT-SoVITS API 地址，默认 http://127.0.0.1:9880。" aria-label="本页面连接的 GPT-SoVITS API 地址，默认 http://127.0.0.1:9880。">i</span>
+              </span>
               <input name="gsv_api_url" />
             </label>
-            <div class="inline-actions">
+
+            <div class="action-row">
               <button type="button" id="startGsv">启动 GSV</button>
               <button type="button" id="stopGsv">停止 GSV</button>
               <button type="button" id="checkGsv">检查连接</button>
-              <button type="button" id="applyModels">应用模型</button>
             </div>
-            <label>
-              GPT 权重路径
+
+            <div class="section-title compact">
+              <h3>启动配置</h3>
+            </div>
+
+            <div class="field-grid three">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">GSV 版本</span>
+                  <span class="help-icon" tabindex="0" data-tip="决定 GSV 加载哪一代底模配置。权重路径不填时，会使用该版本默认权重。" aria-label="决定 GSV 加载哪一代底模配置。权重路径不填时，会使用该版本默认权重。">i</span>
+                </span>
+                <select name="gsv_version">
+                  <option value="v1">v1</option>
+                  <option value="v2">v2</option>
+                  <option value="v2Pro">v2Pro</option>
+                  <option value="v2ProPlus">v2ProPlus</option>
+                  <option value="v3">v3</option>
+                  <option value="v4">v4</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Device</span>
+                  <span class="help-icon" tabindex="0" data-tip="GSV 推理设备。有可用 NVIDIA GPU 时选 cuda；仅 CPU 推理时选 cpu。" aria-label="GSV 推理设备。有可用 NVIDIA GPU 时选 cuda；仅 CPU 推理时选 cpu。">i</span>
+                </span>
+                <select name="gsv_device">
+                  <option value="cuda">cuda</option>
+                  <option value="cpu">cpu</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Half</span>
+                  <span class="help-icon" tabindex="0" data-tip="是否使用半精度推理。GPU 通常可开启；CPU 下 GSV 会自动关闭半精度。" aria-label="是否使用半精度推理。GPU 通常可开启；CPU 下 GSV 会自动关闭半精度。">i</span>
+                </span>
+                <select name="gsv_is_half">
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="section-title compact">
+              <h3>模型与参考</h3>
+            </div>
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">GPT 权重路径</span>
+                <span class="help-icon" tabindex="0" data-tip="启动时写入运行时配置的 t2s_weights_path。不填则使用所选版本默认路径。" aria-label="启动时写入运行时配置的 t2s_weights_path。不填则使用所选版本默认路径。">i</span>
+              </span>
               <input name="gpt_weights_path" placeholder="如 GPT_SoVITS/.../*.ckpt" />
-              <span>GPT 权重通常是语义模型 `.ckpt`，留空则使用 GSV 当前加载的模型。</span>
             </label>
-            <label>
-              SoVITS 权重路径
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">SoVITS 权重路径</span>
+                <span class="help-icon" tabindex="0" data-tip="启动时写入运行时配置的 vits_weights_path。不填则使用所选版本默认路径。" aria-label="启动时写入运行时配置的 vits_weights_path。不填则使用所选版本默认路径。">i</span>
+              </span>
               <input name="sovits_weights_path" placeholder="如 GPT_SoVITS/.../*.pth" />
-              <span>SoVITS 权重通常是声学/声线模型 `.pth`，用于切换训练后的声音。</span>
             </label>
-            <label>
-              参考音频路径
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">参考音频路径</span>
+                <span class="help-icon" tabindex="0" data-tip="用于提供目标声线和语气的短音频，路径要能被本机 GSV 进程访问。" aria-label="用于提供目标声线和语气的短音频，路径要能被本机 GSV 进程访问。">i</span>
+              </span>
               <input name="ref_audio_path" />
-              <span>用于提供目标声线和语气的短音频，路径要能被本机 GSV 进程访问。</span>
             </label>
-            <label>
-              辅助参考音频路径
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">辅助参考音频路径</span>
+                <span class="help-icon" tabindex="0" data-tip="多参考音频融合时使用，一行一个路径；不用时留空。" aria-label="多参考音频融合时使用，一行一个路径；不用时留空。">i</span>
+              </span>
               <textarea name="aux_ref_audio_paths" rows="3" placeholder="一行一个路径"></textarea>
-              <span>多参考音频融合时使用；不用时留空。</span>
             </label>
-            <label>
-              参考音频文本
+
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">参考音频文本</span>
+                <span class="help-icon" tabindex="0" data-tip="参考音频中实际说出的文字，越准确越利于音色和韵律稳定。" aria-label="参考音频中实际说出的文字，越准确越利于音色和韵律稳定。">i</span>
+              </span>
               <textarea name="prompt_text" rows="3"></textarea>
-              <span>参考音频中实际说出的文字，越准确越利于音色和韵律稳定。</span>
             </label>
-            <div class="grid-2">
-              <label>
-                参考语种
+
+            <div class="field-grid">
+              <label class="field">
+                <span class="field-head"><span class="field-name">参考语种</span></span>
                 <select name="prompt_lang">
                   <option value="zh">zh</option>
                   <option value="en">en</option>
@@ -119,8 +215,9 @@
                   <option value="yue">yue</option>
                 </select>
               </label>
-              <label>
-                输出语种
+
+              <label class="field">
+                <span class="field-head"><span class="field-name">输出语种</span></span>
                 <select name="text_lang">
                   <option value="zh">zh</option>
                   <option value="en">en</option>
@@ -130,57 +227,82 @@
                 </select>
               </label>
             </div>
-            <div class="grid-2">
-              <label>
-                切分方式
+
+            <div class="section-title compact">
+              <h3>生成参数</h3>
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span class="field-head"><span class="field-name">切分方式</span></span>
                 <input name="text_split_method" />
               </label>
-              <label>
-                音频格式
+
+              <label class="field">
+                <span class="field-head"><span class="field-name">音频格式</span></span>
                 <select name="media_type">
                   <option value="wav">wav</option>
                   <option value="ogg">ogg</option>
                   <option value="aac">aac</option>
                 </select>
               </label>
-            </div>
-            <div class="grid-2">
-              <label>
-                top_k
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">top_k</span>
+                  <span class="help-icon" tabindex="0" data-tip="候选采样数量，越大越发散。" aria-label="候选采样数量，越大越发散。">i</span>
+                </span>
                 <input name="top_k" type="number" min="1" step="1" />
-                <span>候选采样数量，越大越发散。</span>
               </label>
-              <label>
-                top_p
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">top_p</span>
+                  <span class="help-icon" tabindex="0" data-tip="核采样阈值，越小越保守。" aria-label="核采样阈值，越小越保守。">i</span>
+                </span>
                 <input name="top_p" type="number" min="0" max="1" step="0.05" />
-                <span>核采样阈值，越小越保守。</span>
               </label>
-              <label>
-                TTS Temperature
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Temperature</span>
+                  <span class="help-icon" tabindex="0" data-tip="生成随机性，越高越有变化，也更可能不稳。" aria-label="生成随机性，越高越有变化，也更可能不稳。">i</span>
+                </span>
                 <input name="tts_temperature" type="number" min="0" max="2" step="0.1" />
-                <span>生成随机性，越高越有变化，也更可能不稳。</span>
               </label>
-              <label>
-                Speed
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Speed</span>
+                  <span class="help-icon" tabindex="0" data-tip="语速倍率，1.0 为正常。" aria-label="语速倍率，1.0 为正常。">i</span>
+                </span>
                 <input name="speed_factor" type="number" min="0.5" max="2" step="0.05" />
-                <span>语速倍率，1.0 为正常。</span>
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">Streaming Mode</span>
+                  <span class="help-icon" tabindex="0" data-tip="0 为非流式；1-3 为 GSV 的不同流式模式。本页面默认使用 0。" aria-label="0 为非流式；1-3 为 GSV 的不同流式模式。本页面默认使用 0。">i</span>
+                </span>
+                <select name="streaming_mode">
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                </select>
               </label>
             </div>
-            <label>
-              Streaming Mode
-              <select name="streaming_mode">
-                <option value="0">0</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-              </select>
-              <span>0 为非流式，1-3 为不同速度/质量的流式模式；本页面默认使用 0。</span>
-            </label>
           </section>
 
           <section class="tab-panel" data-panel="asr">
-            <label>
-              ASR 语言
+            <div class="section-title">
+              <h3>语音识别</h3>
+            </div>
+            <label class="field">
+              <span class="field-head">
+                <span class="field-name">ASR 语言</span>
+                <span class="help-icon" tabindex="0" data-tip="浏览器录音转写时使用的识别语言。" aria-label="浏览器录音转写时使用的识别语言。">i</span>
+              </span>
               <select name="asr_language">
                 <option value="zh">中文 zh</option>
                 <option value="yue">粤语 yue</option>
