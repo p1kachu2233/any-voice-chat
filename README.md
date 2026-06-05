@@ -23,7 +23,24 @@ git submodule update --init --recursive
 
 推荐直接使用 GPT-SoVITS 整合包，不需要自己配置 conda 环境。
 
-将整合包内容放到项目根目录的 `GPT-SoVITS/` 下，并确认存在：
+把整合包解压后的内容放到本项目根目录下，并确保目录名是 `GPT-SoVITS`。如果整合包解压出来的文件夹名字不是 `GPT-SoVITS`，请先重命名。
+
+目录结构应类似：
+
+```text
+any-voice-chat/
+├─ app/
+├─ GPT-SoVITS/
+│  ├─ api_v2.py
+│  ├─ GPT_SoVITS/
+│  ├─ tools/
+│  └─ runtime/
+│     └─ python.exe
+├─ start.bat
+└─ start.py
+```
+
+确认存在：
 
 ```text
 GPT-SoVITS\runtime\python.exe
@@ -62,7 +79,7 @@ cd "$env:CODEX_WORKTREE_PATH"
 
 ## 备选方式：官方脚本安装
 
-如果你想按 GPT-SoVITS 官方方式安装，可以使用 conda 环境：
+如果你想按 GPT-SoVITS 官方方式安装，可以参考 [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) 的说明，并使用 conda 环境：
 
 ```powershell
 cd GPT-SoVITS
@@ -93,4 +110,4 @@ python start.py
 config/user_settings.json
 ```
 
-该文件包含 API Key 等个人信息，已被 `.gitignore` 忽略，不应提交。
+该文件包含 API Key 等个人信息。
