@@ -41,6 +41,7 @@ let vadLastSubmitAt = 0;
 let voiceInputSerial = 0;
 let asrBusy = false;
 let currentChatController = null;
+let currentChatRequestId = null;
 let currentChatInterrupted = false;
 let currentTypewriter = null;
 let activeChatId = 0;
@@ -618,6 +619,7 @@ function stopAudioPlayback() {
 
 function interruptAssistant(reason = "interrupted") {
   currentChatInterrupted = true;
+  cancelCurrentChat();
   if (currentChatController) {
     currentChatController.abort();
   }
@@ -627,6 +629,21 @@ function interruptAssistant(reason = "interrupted") {
   stopAudioPlayback();
   busy = false;
   setStatus(reason === "speech" ? "已打断，正在听你说话" : "已打断");
+}
+
+function makeChatRequestId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function cancelCurrentChat() {
+  if (!currentChatRequestId) return;
+  fetch(`/api/chat/cancel/${encodeURIComponent(currentChatRequestId)}`, {
+    method: "POST",
+    keepalive: true,
+  }).catch(() => {});
 }
 
 async function playNextAudio() {
@@ -745,6 +762,8 @@ async function runChat(userText, options = {}) {
   currentChatInterrupted = false;
   const chatId = activeChatId + 1;
   activeChatId = chatId;
+  const chatRequestId = makeChatRequestId();
+  currentChatRequestId = chatRequestId;
   currentChatController = new AbortController();
   let assistantBubble = null;
   let typewriter = null;
@@ -787,7 +806,7 @@ async function runChat(userText, options = {}) {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, history, speak: enableSpeech }),
+      body: JSON.stringify({ message: text, history, speak: enableSpeech, chat_id: chatRequestId }),
       signal: currentChatController.signal,
     });
     if (!response.ok || !response.body) {
@@ -870,6 +889,7 @@ async function runChat(userText, options = {}) {
     if (chatId === activeChatId) {
       busy = false;
       currentChatController = null;
+      currentChatRequestId = null;
       currentTypewriter = null;
       currentChatInterrupted = false;
     }

@@ -71,7 +71,12 @@ def chat_completion(settings: dict[str, Any], user_text: str, history: list[dict
         raise RuntimeError(f"OpenAI 返回格式异常：{data}")
 
 
-def stream_chat_completion(settings: dict[str, Any], user_text: str, history: list[dict[str, str]] | None = None):
+def stream_chat_completion(
+    settings: dict[str, Any],
+    user_text: str,
+    history: list[dict[str, str]] | None = None,
+    stop_check=None,
+):
     with requests.post(
         _build_url(settings.get("openai_base_url", "")),
         headers=_headers(settings),
@@ -87,6 +92,8 @@ def stream_chat_completion(settings: dict[str, Any], user_text: str, history: li
             raise RuntimeError(f"OpenAI 请求失败：{detail}")
 
         for line_bytes in response.iter_lines(decode_unicode=False):
+            if stop_check and stop_check():
+                break
             if not line_bytes:
                 continue
             line = line_bytes.decode("utf-8", errors="replace")
@@ -106,4 +113,6 @@ def stream_chat_completion(settings: dict[str, Any], user_text: str, history: li
             delta = choices[0].get("delta") or {}
             content = delta.get("content")
             if content:
+                if stop_check and stop_check():
+                    break
                 yield content

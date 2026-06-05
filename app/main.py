@@ -25,12 +25,15 @@ from app.settings import ROOT_DIR, load_settings, save_settings
 STATIC_DIR = ROOT_DIR / "app" / "static"
 OUTPUT_DIR = ROOT_DIR / "runtime" / "outputs"
 TTS_STREAM_TTL = 600
+CHAT_CANCEL_TTL = 600
 
 app = FastAPI(title="Any Voice Chat")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _tts_stream_lock = threading.Lock()
 _tts_streams: dict[str, dict[str, Any]] = {}
+_chat_cancel_lock = threading.Lock()
+_cancelled_chat_ids: dict[str, float] = {}
 
 
 class SettingsPayload(BaseModel):
@@ -41,6 +44,7 @@ class ChatPayload(BaseModel):
     message: str
     history: list[dict[str, str]] = []
     speak: bool = True
+    chat_id: Optional[str] = None
 
 
 class TtsPayload(BaseModel):
@@ -97,12 +101,46 @@ def _register_tts_stream(settings: dict[str, Any], text: str) -> str:
     return f"/api/tts/stream/{stream_id}"
 
 
-def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text: bool = False):
+def _cleanup_cancelled_chats() -> None:
+    now = time.time()
+    expired = [
+        chat_id
+        for chat_id, cancelled_at in _cancelled_chat_ids.items()
+        if now - cancelled_at > CHAT_CANCEL_TTL
+    ]
+    for chat_id in expired:
+        _cancelled_chat_ids.pop(chat_id, None)
+
+
+def _cancel_chat(chat_id: str) -> None:
+    with _chat_cancel_lock:
+        _cleanup_cancelled_chats()
+        _cancelled_chat_ids[chat_id] = time.time()
+
+
+def _is_chat_cancelled(chat_id: Optional[str]) -> bool:
+    if not chat_id:
+        return False
+    with _chat_cancel_lock:
+        _cleanup_cancelled_chats()
+        return chat_id in _cancelled_chat_ids
+
+
+def _finish_chat(chat_id: Optional[str]) -> None:
+    if not chat_id:
+        return
+    with _chat_cancel_lock:
+        _cancelled_chat_ids.pop(chat_id, None)
+
+
+def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text: bool = False, stop_check=None):
     audio_id = uuid.uuid4().hex
     tts_segment = segment.strip()
     if not tts_segment:
         if reveal_text:
             yield _stream_event("text_delta", {"delta": segment})
+        return
+    if stop_check and stop_check():
         return
     try:
         audio = stream_synthesize(settings, tts_segment)
@@ -115,9 +153,14 @@ def _iter_tts_stream_events(settings: dict[str, Any], segment: str, reveal_text:
 
     if reveal_text:
         yield _stream_event("text_delta", {"delta": segment})
+    if stop_check and stop_check():
+        audio.response.close()
+        return
     yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
     try:
         for chunk in audio.response.iter_content(chunk_size=8192):
+            if stop_check and stop_check():
+                return
             if chunk:
                 yield _stream_event(
                     "audio_chunk",
@@ -286,12 +329,22 @@ def chat(payload: ChatPayload):
     return {"user_text": user_text, "assistant_text": assistant_text, "audio_url": audio_url}
 
 
+@app.post("/api/chat/cancel/{chat_id}")
+def cancel_chat(chat_id: str):
+    chat_id = chat_id.strip()
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id 不能为空")
+    _cancel_chat(chat_id)
+    return {"ok": True, "chat_id": chat_id}
+
+
 @app.post("/api/chat/stream")
 def chat_stream(payload: ChatPayload):
     settings = load_settings()
     user_text = payload.message.strip()
     if not user_text:
         raise HTTPException(status_code=400, detail="消息不能为空")
+    chat_id = (payload.chat_id or uuid.uuid4().hex).strip()
 
     def generate():
         assistant_text = ""
@@ -302,6 +355,13 @@ def chat_stream(payload: ChatPayload):
         min_segment_chars = int(settings.get("tts_min_segment_chars") or 10)
         soft_segment_chars = int(settings.get("tts_soft_segment_chars") or 0)
         force_segment_chars = int(settings.get("tts_force_segment_chars") or 0)
+
+        def cancelled():
+            return _is_chat_cancelled(chat_id)
+
+        if cancelled():
+            _finish_chat(chat_id)
+            return
 
         if speak_enabled:
             gsv_health = check_gsv_api(settings)
@@ -316,13 +376,17 @@ def chat_stream(payload: ChatPayload):
 
         yield _stream_event("start", {"user_text": user_text})
         try:
-            for delta in stream_chat_completion(settings, user_text, payload.history):
+            for delta in stream_chat_completion(settings, user_text, payload.history, stop_check=cancelled):
+                if cancelled():
+                    return
                 assistant_text += delta
                 tts_buffer += delta
                 if reveal_text_immediately:
                     yield _stream_event("text_delta", {"delta": delta})
 
                 while True:
+                    if cancelled():
+                        return
                     segment, tts_buffer = _pop_tts_segment(
                         tts_buffer,
                         min_chars=min_segment_chars,
@@ -333,11 +397,13 @@ def chat_stream(payload: ChatPayload):
                         break
                     if speak_enabled:
                         if _has_speakable_text(segment):
-                            yield from _iter_tts_stream_events(settings, segment)
+                            yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled)
                         elif not reveal_text_immediately:
                             yield _stream_event("text_delta", {"delta": segment})
 
             while True:
+                if cancelled():
+                    return
                 segment, tts_buffer = _pop_tts_segment(
                     tts_buffer,
                     min_chars=min_segment_chars,
@@ -349,16 +415,21 @@ def chat_stream(payload: ChatPayload):
                     break
                 if speak_enabled:
                     if _has_speakable_text(segment):
-                        yield from _iter_tts_stream_events(settings, segment)
+                        yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled)
                     elif not reveal_text_immediately:
                         yield _stream_event("text_delta", {"delta": segment})
                 if not tts_buffer:
                     break
 
-            yield _stream_event("done", {"assistant_text": assistant_text})
+            if not cancelled():
+                yield _stream_event("done", {"assistant_text": assistant_text})
         except Exception as exc:
+            if cancelled():
+                return
             log_exception("chat.stream", exc)
             yield _stream_event("error", {"message": str(exc)})
+        finally:
+            _finish_chat(chat_id)
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
