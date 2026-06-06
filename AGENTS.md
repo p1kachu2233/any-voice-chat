@@ -107,6 +107,8 @@ OpenAI 流式响应必须按 UTF-8 bytes 解码，不要使用 `requests.iter_li
 
 OpenAI 聊天采样参数使用 `openai_` 前缀保存，避免和 GSV TTS 的 `top_k/top_p/tts_temperature` 混淆。后台 OpenAI 页必须给采样参数展示合理默认值；除 `seed` 默认留空表示随机外，其它生成参数默认不应为 0。用户可以清空可选参数，清空时不要发送给上游 chat/completions；用户填 0 时应提示无效，不要把 0 当成关闭开关。
 
+Qwen 等 OpenAI 兼容思考模型使用 `openai_thinking_mode` 控制，取值为 `auto/on/off`。`auto` 表示不发送扩展字段；`on/off` 才分别向上游请求体发送 `enable_thinking=true/false`，避免普通 OpenAI 服务因为未知字段报错。
+
 聊天语音播放默认在 `/api/chat/stream` 的 NDJSON 里发送 `audio_start`、`audio_chunk`、`audio_end` 事件；后端从 GSV `/tts` 读取到一块音频就立即 base64 后发给前端。默认 `streaming_mode` 为 `1`；`1/2/3` 对应 GSV 的生成流式模式，`0` 也走同一套播放链路，但 GSV 端会完整生成后才开始返回音频。开启 GSV 语音时，后端发送给 GSV 的文本段必须按完整句聚合到 `tts_min_segment_chars` 个非空白字符，短句要继续拼下一句，最终收尾段例外；`tts_soft_segment_chars` 和 `tts_force_segment_chars` 分别控制长文本软切和强切，填 `0` 表示关闭。所有后端切分出来的展示段必须能无损拼回大模型全文，不能在切分函数里 `strip()` 掉空白；只允许在真正调用 GSV TTS 前对送入 TTS 的文本做 `strip()` 清理。句末连续终止标点必须并入上一段；如果流式切分导致 buffer 开头出现孤立终止标点，该标点段只能作为展示文本进入气泡，不允许送 GSV。emoji-only、punctuation-only 段同样只展示不合成。GPT-SoVITS 上游在首个切分标点前文本少于 4 个字符时可能自行给目标文本前补 `。`，不要为了规避这条上游预处理而改写本应用发送的 TTS 文本；本应用优先保证聊天气泡内容与大模型输出完全一致。该阈值和 `text_display_mode` 属于本应用体验设置，放在后台 `应用` 页签，不放在 GSV 页签。`text_display_mode=speech_sync` 时，前端文字必须在对应音频段被 Web Audio 排到实际播放时间线时才进入单一 `runChat` 打字机队列；`text_display_mode=text_first` 时才允许按 OpenAI token 先显示文字。等待生成或等待播放期间，助手气泡末尾显示 `...` 作为状态感知。前端不要直接把 GSV 流 URL 塞给 `<audio>` 播放，浏览器对 GSV 的 wav/raw chunk 流不稳定；应解析 wav header，并用 Web Audio API 按 PCM chunk 调度播放。
 
 ## GPT-SoVITS 安装注意事项

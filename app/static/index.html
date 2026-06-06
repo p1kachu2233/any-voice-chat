@@ -158,6 +158,18 @@
                 </span>
                 <input name="openai_seed" type="number" min="1" step="1" placeholder="留空随机" />
               </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">thinking</span>
+                  <span class="help-icon" tabindex="0" data-tip="Qwen 等思考模型可用。自动表示不发送 enable_thinking；开启/关闭会向 OpenAI 兼容接口发送 enable_thinking=true/false。" aria-label="Qwen 等思考模型可用。自动表示不发送 enable_thinking；开启/关闭会向 OpenAI 兼容接口发送 enable_thinking=true/false。">i</span>
+                </span>
+                <select name="openai_thinking_mode">
+                  <option value="auto">自动</option>
+                  <option value="on">开启</option>
+                  <option value="off">关闭</option>
+                </select>
+              </label>
             </div>
 
             <label class="field">

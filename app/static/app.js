@@ -123,6 +123,7 @@ const defaultFormValues = {
   openai_repetition_penalty: 1.05,
   openai_max_tokens: 1024,
   openai_seed: "",
+  openai_thinking_mode: "auto",
   tts_min_segment_chars: 10,
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,

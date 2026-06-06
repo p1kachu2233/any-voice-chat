@@ -57,6 +57,11 @@ def _payload(settings: dict[str, Any], user_text: str, history: list[dict[str, s
     for key, value in optional_params.items():
         if value not in (None, ""):
             payload[key] = value
+    thinking_mode = settings.get("openai_thinking_mode") or "auto"
+    if thinking_mode == "on":
+        payload["enable_thinking"] = True
+    elif thinking_mode == "off":
+        payload["enable_thinking"] = False
     if stream:
         payload["stream"] = True
     return payload
