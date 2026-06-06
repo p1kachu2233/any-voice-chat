@@ -87,28 +87,28 @@
                 </span>
                 <input name="openai_model" />
               </label>
-
-              <label class="field">
-                <span class="field-head">
-                  <span class="field-name">Temperature</span>
-                  <span class="help-icon" tabindex="0" data-tip="回复随机性，数值越高越发散。" aria-label="回复随机性，数值越高越发散。">i</span>
-                </span>
-                <input name="openai_temperature" type="number" min="0" max="2" step="0.1" />
-              </label>
             </div>
 
             <div class="section-title compact">
               <h3>生成参数</h3>
-              <p>留空表示不发送该参数；top_k 和 repetition_penalty 主要用于本地 OpenAI 兼容服务。</p>
+              <p>清空表示不发送该参数；不要填 0。top_k 和 repetition_penalty 主要用于本地 OpenAI 兼容服务。</p>
             </div>
 
             <div class="field-grid three">
               <label class="field">
                 <span class="field-head">
+                  <span class="field-name">temperature</span>
+                  <span class="help-icon" tabindex="0" data-tip="回复随机性，数值越高越发散。" aria-label="回复随机性，数值越高越发散。">i</span>
+                </span>
+                <input name="openai_temperature" type="number" min="0" max="2" step="0.1" value="0.7" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
                   <span class="field-name">top_p</span>
                   <span class="help-icon" tabindex="0" data-tip="核采样阈值，越小越保守；官方 OpenAI 接口支持该字段。" aria-label="核采样阈值，越小越保守；官方 OpenAI 接口支持该字段。">i</span>
                 </span>
-                <input name="openai_top_p" type="number" min="0" max="1" step="0.01" placeholder="如 1" />
+                <input name="openai_top_p" type="number" min="0.01" max="1" step="0.01" value="0.9" />
               </label>
 
               <label class="field">
@@ -116,7 +116,7 @@
                   <span class="field-name">top_k</span>
                   <span class="help-icon" tabindex="0" data-tip="限制候选 token 数量；官方 OpenAI 通常不支持，本地兼容服务支持时再填写。" aria-label="限制候选 token 数量；官方 OpenAI 通常不支持，本地兼容服务支持时再填写。">i</span>
                 </span>
-                <input name="openai_top_k" type="number" min="1" max="1000" step="1" placeholder="如 40" />
+                <input name="openai_top_k" type="number" min="1" max="1000" step="1" value="40" />
               </label>
 
               <label class="field">
@@ -124,7 +124,7 @@
                   <span class="field-name">max_tokens</span>
                   <span class="help-icon" tabindex="0" data-tip="限制单次回复最多生成的 token 数；留空则由模型或服务端默认控制。" aria-label="限制单次回复最多生成的 token 数；留空则由模型或服务端默认控制。">i</span>
                 </span>
-                <input name="openai_max_tokens" type="number" min="1" step="1" placeholder="如 512" />
+                <input name="openai_max_tokens" type="number" min="1" step="1" value="1024" />
               </label>
 
               <label class="field">
@@ -132,7 +132,7 @@
                   <span class="field-name">frequency_penalty</span>
                   <span class="help-icon" tabindex="0" data-tip="降低重复使用同一词语的概率，常用范围 -2 到 2；官方 OpenAI 接口支持该字段。" aria-label="降低重复使用同一词语的概率，常用范围 -2 到 2；官方 OpenAI 接口支持该字段。">i</span>
                 </span>
-                <input name="openai_frequency_penalty" type="number" min="-2" max="2" step="0.1" placeholder="如 0" />
+                <input name="openai_frequency_penalty" type="number" min="-2" max="2" step="0.1" value="0.2" />
               </label>
 
               <label class="field">
@@ -140,7 +140,7 @@
                   <span class="field-name">presence_penalty</span>
                   <span class="help-icon" tabindex="0" data-tip="鼓励模型引入新话题或新内容，常用范围 -2 到 2；官方 OpenAI 接口支持该字段。" aria-label="鼓励模型引入新话题或新内容，常用范围 -2 到 2；官方 OpenAI 接口支持该字段。">i</span>
                 </span>
-                <input name="openai_presence_penalty" type="number" min="-2" max="2" step="0.1" placeholder="如 0" />
+                <input name="openai_presence_penalty" type="number" min="-2" max="2" step="0.1" value="0.1" />
               </label>
 
               <label class="field">
@@ -148,7 +148,7 @@
                   <span class="field-name">repetition_penalty</span>
                   <span class="help-icon" tabindex="0" data-tip="重复惩罚，常见于本地推理服务；官方 OpenAI 通常不支持，兼容服务支持时再填写。" aria-label="重复惩罚，常见于本地推理服务；官方 OpenAI 通常不支持，兼容服务支持时再填写。">i</span>
                 </span>
-                <input name="openai_repetition_penalty" type="number" min="0.01" max="2" step="0.01" placeholder="如 1.05" />
+                <input name="openai_repetition_penalty" type="number" min="0.01" max="2" step="0.01" value="1.05" />
               </label>
 
               <label class="field">
@@ -156,7 +156,7 @@
                   <span class="field-name">seed</span>
                   <span class="help-icon" tabindex="0" data-tip="随机种子；部分 OpenAI 兼容服务支持，用于尽量复现输出。" aria-label="随机种子；部分 OpenAI 兼容服务支持，用于尽量复现输出。">i</span>
                 </span>
-                <input name="openai_seed" type="number" step="1" placeholder="如 1234" />
+                <input name="openai_seed" type="number" min="1" step="1" placeholder="留空随机" />
               </label>
             </div>
 

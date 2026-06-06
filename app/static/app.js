@@ -115,16 +115,17 @@ const optionalNumericFields = new Set([
 ]);
 const checkboxFields = new Set(["enable_gsv_tts", "auto_preload_vad", "auto_preload_asr"]);
 const defaultFormValues = {
+  openai_temperature: 0.7,
+  openai_top_p: 0.9,
+  openai_top_k: 40,
+  openai_frequency_penalty: 0.2,
+  openai_presence_penalty: 0.1,
+  openai_repetition_penalty: 1.05,
+  openai_max_tokens: 1024,
+  openai_seed: "",
   tts_min_segment_chars: 10,
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,
-  openai_top_p: "",
-  openai_top_k: "",
-  openai_frequency_penalty: "",
-  openai_presence_penalty: "",
-  openai_repetition_penalty: "",
-  openai_max_tokens: "",
-  openai_seed: "",
   text_display_mode: "speech_sync",
   vad_engine: "vad_web",
   vad_web_positive_threshold: 0.5,
@@ -844,7 +845,11 @@ function readForm() {
   new FormData(form).forEach((value, key) => {
     if (optionalNumericFields.has(key)) {
       const text = String(value).trim();
-      data[key] = text === "" ? "" : Number(text);
+      const numberValue = Number(text);
+      if (text !== "" && numberValue === 0) {
+        throw new Error(`${key} 不能为 0；清空表示不发送`);
+      }
+      data[key] = text === "" ? "" : numberValue;
     } else {
       data[key] = numericFields.has(key) ? Number(value) : value;
     }
