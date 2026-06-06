@@ -124,6 +124,7 @@ const defaultFormValues = {
   openai_max_tokens: 1024,
   openai_seed: "",
   openai_thinking_mode: "auto",
+  openai_thinking_format: "chat_template_kwargs",
   tts_min_segment_chars: 10,
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,

@@ -162,12 +162,23 @@
               <label class="field">
                 <span class="field-head">
                   <span class="field-name">thinking</span>
-                  <span class="help-icon" tabindex="0" data-tip="Qwen 等思考模型可用。自动表示不发送 enable_thinking；开启/关闭会向 OpenAI 兼容接口发送 enable_thinking=true/false。" aria-label="Qwen 等思考模型可用。自动表示不发送 enable_thinking；开启/关闭会向 OpenAI 兼容接口发送 enable_thinking=true/false。">i</span>
+                  <span class="help-icon" tabindex="0" data-tip="Qwen 等思考模型可用。自动表示不发送思考参数；开启/关闭会按下方参数格式发送 true/false。" aria-label="Qwen 等思考模型可用。自动表示不发送思考参数；开启/关闭会按下方参数格式发送 true/false。">i</span>
                 </span>
                 <select name="openai_thinking_mode">
                   <option value="auto">自动</option>
                   <option value="on">开启</option>
                   <option value="off">关闭</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">thinking 参数格式</span>
+                  <span class="help-icon" tabindex="0" data-tip="chat_template_kwargs 会发送 {chat_template_kwargs:{enable_thinking:...}}；顶层字段会发送 {enable_thinking:...}。" aria-label="chat_template_kwargs 会发送 {chat_template_kwargs:{enable_thinking:...}}；顶层字段会发送 {enable_thinking:...}。">i</span>
+                </span>
+                <select name="openai_thinking_format">
+                  <option value="chat_template_kwargs">chat_template_kwargs</option>
+                  <option value="root">顶层 enable_thinking</option>
                 </select>
               </label>
             </div>

@@ -58,10 +58,13 @@ def _payload(settings: dict[str, Any], user_text: str, history: list[dict[str, s
         if value not in (None, ""):
             payload[key] = value
     thinking_mode = settings.get("openai_thinking_mode") or "auto"
-    if thinking_mode == "on":
-        payload["enable_thinking"] = True
-    elif thinking_mode == "off":
-        payload["enable_thinking"] = False
+    if thinking_mode in {"on", "off"}:
+        enable_thinking = thinking_mode == "on"
+        thinking_format = settings.get("openai_thinking_format") or "chat_template_kwargs"
+        if thinking_format == "root":
+            payload["enable_thinking"] = enable_thinking
+        else:
+            payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
     if stream:
         payload["stream"] = True
     return payload

@@ -23,6 +23,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "openai_max_tokens": 1024,
     "openai_seed": "",
     "openai_thinking_mode": "auto",
+    "openai_thinking_format": "chat_template_kwargs",
     "system_prompt": "你是一个适合语音聊天的助手。回答要自然、简洁，像真人对话一样。",
     "asr_language": "zh",
     "enable_gsv_tts": True,
@@ -75,6 +76,7 @@ VALID_TEXT_SPLIT_METHODS = {"cut0", "cut1", "cut2", "cut3", "cut4", "cut5"}
 VALID_TEXT_DISPLAY_MODES = {"speech_sync", "text_first"}
 VALID_VAD_ENGINES = {"vad_web", "rms"}
 VALID_OPENAI_THINKING_MODES = {"auto", "on", "off"}
+VALID_OPENAI_THINKING_FORMATS = {"chat_template_kwargs", "root"}
 OPTIONAL_OPENAI_FLOAT_KEYS = {
     "openai_top_p",
     "openai_frequency_penalty",
@@ -130,6 +132,8 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
         settings["text_split_method"] = DEFAULT_SETTINGS["text_split_method"]
     if settings["openai_thinking_mode"] not in VALID_OPENAI_THINKING_MODES:
         settings["openai_thinking_mode"] = DEFAULT_SETTINGS["openai_thinking_mode"]
+    if settings["openai_thinking_format"] not in VALID_OPENAI_THINKING_FORMATS:
+        settings["openai_thinking_format"] = DEFAULT_SETTINGS["openai_thinking_format"]
     settings["openai_temperature"] = min(max(settings["openai_temperature"], 0.0), 2.0)
     if settings["openai_top_p"] != "":
         if settings["openai_top_p"] == 0:
