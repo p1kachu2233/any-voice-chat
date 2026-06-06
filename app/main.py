@@ -40,6 +40,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _tts_stream_lock = threading.Lock()
 _tts_streams: dict[str, dict[str, Any]] = {}
+_gsv_tts_lock = threading.Lock()
 _chat_run_lock = threading.Lock()
 _chat_runs: dict[str, "ChatRun"] = {}
 _cancelled_chat_ids: dict[str, float] = {}
@@ -209,21 +210,39 @@ def _iter_tts_stream_events(
         return
     if run and run.is_cancelled():
         return
+    lock_acquired = False
     try:
+        while not run or not run.is_cancelled():
+            lock_acquired = _gsv_tts_lock.acquire(timeout=0.2)
+            if lock_acquired:
+                break
+        if run and run.is_cancelled():
+            return
+        if not lock_acquired:
+            return
         audio = stream_synthesize(settings, tts_segment)
     except Exception as exc:
+        if lock_acquired:
+            _gsv_tts_lock.release()
         log_exception("tts.stream", exc)
         if reveal_text:
             yield _stream_event("text_delta", {"delta": segment})
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
         return
     if run and not run.track(audio.response):
+        audio.response.close()
+        if lock_acquired:
+            _gsv_tts_lock.release()
         return
 
     if reveal_text:
         yield _stream_event("text_delta", {"delta": segment})
     if run and run.is_cancelled():
         audio.response.close()
+        if run:
+            run.untrack(audio.response)
+        if lock_acquired:
+            _gsv_tts_lock.release()
         return
     yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
     try:
@@ -247,6 +266,8 @@ def _iter_tts_stream_events(
         if run:
             run.untrack(audio.response)
         audio.response.close()
+        if lock_acquired:
+            _gsv_tts_lock.release()
     if run and run.is_cancelled():
         return
     yield _stream_event("audio_end", {"audio_id": audio_id})
@@ -557,7 +578,10 @@ def chat_stream(payload: ChatPayload):
             nonlocal had_error
             try:
                 while not run.is_cancelled():
-                    segment = tts_queue.get()
+                    try:
+                        segment = tts_queue.get(timeout=0.2)
+                    except queue.Empty:
+                        continue
                     if segment is tts_done_marker:
                         break
                     if _has_speakable_text(segment):
@@ -586,7 +610,12 @@ def chat_stream(payload: ChatPayload):
 
         try:
             while True:
-                item = event_queue.get()
+                if run.is_cancelled():
+                    break
+                try:
+                    item = event_queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
                 if item is done_marker:
                     break
                 if run.is_cancelled():

@@ -118,7 +118,7 @@ def stream_synthesize(settings: dict[str, Any], text: str) -> StreamingAudio:
         f"{_base_url(settings)}/tts",
         json=payload,
         stream=True,
-        timeout=(10, 300),
+        timeout=(5, 60),
     )
     content_type = response.headers.get("content-type", "")
     if response.status_code >= 400 or "application/json" in content_type:
