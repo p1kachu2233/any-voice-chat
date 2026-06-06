@@ -85,22 +85,22 @@ const numericFields = new Set([
   "tts_min_segment_chars",
   "tts_soft_segment_chars",
   "tts_force_segment_chars",
-  "vad_threshold",
-  "vad_noise_multiplier",
-  "vad_noise_offset",
-  "vad_assistant_threshold",
-  "vad_assistant_noise_multiplier",
-  "vad_assistant_noise_offset",
-  "vad_start_frames",
-  "vad_silence_ms",
-  "vad_min_speech_ms",
-  "vad_cooldown_ms",
-  "vad_pre_buffer_ms",
   "vad_web_positive_threshold",
   "vad_web_negative_threshold",
   "vad_web_redemption_ms",
   "vad_web_pre_speech_pad_ms",
   "vad_web_min_speech_ms",
+  "vad_web_cooldown_ms",
+  "rms_vad_threshold",
+  "rms_vad_noise_multiplier",
+  "rms_vad_noise_offset",
+  "rms_vad_assistant_threshold",
+  "rms_vad_assistant_noise_multiplier",
+  "rms_vad_assistant_noise_offset",
+  "rms_vad_start_frames",
+  "rms_vad_silence_ms",
+  "rms_vad_min_speech_ms",
+  "rms_vad_cooldown_ms",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts", "auto_preload_vad", "auto_preload_asr"]);
 const defaultFormValues = {
@@ -108,23 +108,23 @@ const defaultFormValues = {
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,
   text_display_mode: "speech_sync",
-  vad_threshold: VAD_THRESHOLD,
-  vad_noise_multiplier: VAD_NOISE_MULTIPLIER,
-  vad_noise_offset: VAD_NOISE_OFFSET,
-  vad_assistant_threshold: VAD_ASSISTANT_THRESHOLD,
-  vad_assistant_noise_multiplier: VAD_ASSISTANT_NOISE_MULTIPLIER,
-  vad_assistant_noise_offset: VAD_ASSISTANT_NOISE_OFFSET,
-  vad_start_frames: VAD_START_FRAMES,
-  vad_silence_ms: VAD_SILENCE_MS,
-  vad_min_speech_ms: VAD_MIN_SPEECH_MS,
-  vad_cooldown_ms: VAD_COOLDOWN_MS,
-  vad_pre_buffer_ms: VAD_PRE_BUFFER_MS,
   vad_engine: "vad_web",
   vad_web_positive_threshold: 0.5,
   vad_web_negative_threshold: 0.35,
   vad_web_redemption_ms: 1000,
   vad_web_pre_speech_pad_ms: 500,
   vad_web_min_speech_ms: 500,
+  vad_web_cooldown_ms: VAD_COOLDOWN_MS,
+  rms_vad_threshold: VAD_THRESHOLD,
+  rms_vad_noise_multiplier: VAD_NOISE_MULTIPLIER,
+  rms_vad_noise_offset: VAD_NOISE_OFFSET,
+  rms_vad_assistant_threshold: VAD_ASSISTANT_THRESHOLD,
+  rms_vad_assistant_noise_multiplier: VAD_ASSISTANT_NOISE_MULTIPLIER,
+  rms_vad_assistant_noise_offset: VAD_ASSISTANT_NOISE_OFFSET,
+  rms_vad_start_frames: VAD_START_FRAMES,
+  rms_vad_silence_ms: VAD_SILENCE_MS,
+  rms_vad_min_speech_ms: VAD_MIN_SPEECH_MS,
+  rms_vad_cooldown_ms: VAD_COOLDOWN_MS,
   auto_preload_vad: false,
   auto_preload_asr: false,
 };
@@ -1088,15 +1088,15 @@ function settingNumber(key, fallback) {
 function vadStartThreshold() {
   if (assistantPlaybackActive()) {
     return Math.max(
-      settingNumber("vad_assistant_threshold", VAD_ASSISTANT_THRESHOLD),
-      vadNoiseFloor * settingNumber("vad_assistant_noise_multiplier", VAD_ASSISTANT_NOISE_MULTIPLIER),
-      vadNoiseFloor + settingNumber("vad_assistant_noise_offset", VAD_ASSISTANT_NOISE_OFFSET),
+      settingNumber("rms_vad_assistant_threshold", VAD_ASSISTANT_THRESHOLD),
+      vadNoiseFloor * settingNumber("rms_vad_assistant_noise_multiplier", VAD_ASSISTANT_NOISE_MULTIPLIER),
+      vadNoiseFloor + settingNumber("rms_vad_assistant_noise_offset", VAD_ASSISTANT_NOISE_OFFSET),
     );
   }
   return Math.max(
-    settingNumber("vad_threshold", VAD_THRESHOLD),
-    vadNoiseFloor * settingNumber("vad_noise_multiplier", VAD_NOISE_MULTIPLIER),
-    vadNoiseFloor + settingNumber("vad_noise_offset", VAD_NOISE_OFFSET),
+    settingNumber("rms_vad_threshold", VAD_THRESHOLD),
+    vadNoiseFloor * settingNumber("rms_vad_noise_multiplier", VAD_NOISE_MULTIPLIER),
+    vadNoiseFloor + settingNumber("rms_vad_noise_offset", VAD_NOISE_OFFSET),
   );
 }
 
@@ -1107,7 +1107,8 @@ function assistantPlaybackActive() {
 }
 
 function beginVoiceUtterance(now, options = {}) {
-  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < settingNumber("vad_cooldown_ms", VAD_COOLDOWN_MS)) {
+  const cooldownKey = options.externalCapture ? "vad_web_cooldown_ms" : "rms_vad_cooldown_ms";
+  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < settingNumber(cooldownKey, VAD_COOLDOWN_MS)) {
     return false;
   }
   vadSpeaking = true;
@@ -1164,7 +1165,7 @@ async function finalizeRmsVoiceUtterance() {
   vadCaptureActive = false;
   pendingRmsFinalize = false;
   chunks = [];
-  if (voiceMode && elapsed >= settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS) && blob.size > 0) {
+  if (voiceMode && elapsed >= settingNumber("rms_vad_min_speech_ms", VAD_MIN_SPEECH_MS) && blob.size > 0) {
     await submitVoiceBlob(blob, voiceSerial);
   } else if (voiceMode) {
     setStatus("监听中");
@@ -1177,7 +1178,7 @@ async function finalizeVadWebVoiceUtterance(audio) {
   vadSpeaking = false;
   vadCaptureActive = false;
   recordButton.classList.remove("recording");
-  if (!voiceMode || elapsed < settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS)) {
+  if (!voiceMode || elapsed < settingNumber("vad_web_min_speech_ms", VAD_MIN_SPEECH_MS)) {
     if (voiceMode) setStatus("监听中");
     return;
   }
@@ -1249,12 +1250,12 @@ function tickVoiceActivity() {
     } else {
       vadVoiceHitFrames += 1;
     }
-    if (!vadSpeaking && vadVoiceHitFrames >= settingNumber("vad_start_frames", VAD_START_FRAMES)) {
+    if (!vadSpeaking && vadVoiceHitFrames >= settingNumber("rms_vad_start_frames", VAD_START_FRAMES)) {
       beginVoiceUtterance(now);
     }
   } else if (vadSpeaking) {
     if (!vadSilenceStartedAt) vadSilenceStartedAt = now;
-    if (now - vadSilenceStartedAt >= settingNumber("vad_silence_ms", VAD_SILENCE_MS)) {
+    if (now - vadSilenceStartedAt >= settingNumber("rms_vad_silence_ms", VAD_SILENCE_MS)) {
       endVoiceUtterance();
     }
   } else {
@@ -1295,6 +1296,7 @@ function vadWebConfigKey() {
     redemption: settingNumber("vad_web_redemption_ms", 1000),
     preSpeechPad: settingNumber("vad_web_pre_speech_pad_ms", VAD_PRE_BUFFER_MS),
     minSpeech: settingNumber("vad_web_min_speech_ms", VAD_MIN_SPEECH_MS),
+    cooldown: settingNumber("vad_web_cooldown_ms", VAD_COOLDOWN_MS),
   });
 }
 
