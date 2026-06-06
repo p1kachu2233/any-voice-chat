@@ -40,6 +40,8 @@ let vadSpeechStartedAt = 0;
 let vadLastSubmitAt = 0;
 let voiceInputSerial = 0;
 let asrBusy = false;
+let currentAsrController = null;
+let currentAsrRequestId = null;
 let currentChatController = null;
 let currentChatRequestId = null;
 let currentChatInterrupted = false;
@@ -51,10 +53,15 @@ let speechRecognition = null;
 let speechRecognitionRunning = false;
 const inlineAudioStreams = new Map();
 const activeAudioSources = new Set();
-const VAD_THRESHOLD = 0.035;
-const VAD_SILENCE_MS = 900;
-const VAD_MIN_SPEECH_MS = 350;
-const VAD_COOLDOWN_MS = 700;
+const VAD_THRESHOLD = 0.055;
+const VAD_NOISE_MULTIPLIER = 3.2;
+const VAD_NOISE_OFFSET = 0.025;
+const VAD_START_FRAMES = 6;
+const VAD_SILENCE_MS = 1000;
+const VAD_MIN_SPEECH_MS = 500;
+const VAD_COOLDOWN_MS = 900;
+let vadNoiseFloor = 0.012;
+let vadVoiceHitFrames = 0;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -619,13 +626,17 @@ function stopAudioPlayback() {
 
 function interruptAssistant(reason = "interrupted") {
   currentChatInterrupted = true;
+  activeChatId += 1;
   cancelCurrentChat();
+  cancelCurrentAsr();
   if (currentChatController) {
     currentChatController.abort();
   }
   if (currentTypewriter) {
     currentTypewriter.cancel();
   }
+  currentChatController = null;
+  currentTypewriter = null;
   stopAudioPlayback();
   busy = false;
   setStatus(reason === "speech" ? "已打断，正在听你说话" : "已打断");
@@ -644,6 +655,28 @@ function cancelCurrentChat() {
     method: "POST",
     keepalive: true,
   }).catch(() => {});
+  currentChatRequestId = null;
+}
+
+function makeAsrRequestId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function cancelCurrentAsr() {
+  if (currentAsrRequestId) {
+    fetch(`/api/asr/cancel/${encodeURIComponent(currentAsrRequestId)}`, {
+      method: "POST",
+      keepalive: true,
+    }).catch(() => {});
+  }
+  if (currentAsrController) {
+    currentAsrController.abort();
+  }
+  currentAsrRequestId = null;
+  currentAsrController = null;
 }
 
 async function playNextAudio() {
@@ -799,6 +832,7 @@ async function runChat(userText, options = {}) {
 
     const revealAssistantText = (delta) => {
       if (!delta) return;
+      if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) return;
       if (!speechSyncText) assistantText += delta;
       typewriter.push(delta);
     };
@@ -819,11 +853,13 @@ async function runChat(userText, options = {}) {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (!line.trim()) continue;
+        if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) break;
         const event = JSON.parse(line);
         if (event.event === "text_delta") {
           revealAssistantText(event.delta || "");
@@ -889,7 +925,7 @@ async function runChat(userText, options = {}) {
     if (chatId === activeChatId) {
       busy = false;
       currentChatController = null;
-      currentChatRequestId = null;
+      if (currentChatRequestId === chatRequestId) currentChatRequestId = null;
       currentTypewriter = null;
       currentChatInterrupted = false;
     }
@@ -1021,6 +1057,10 @@ function voiceLevel() {
   return Math.sqrt(sum / vadData.length);
 }
 
+function vadStartThreshold() {
+  return Math.max(VAD_THRESHOLD, vadNoiseFloor * VAD_NOISE_MULTIPLIER, vadNoiseFloor + VAD_NOISE_OFFSET);
+}
+
 function beginVoiceUtterance(now) {
   if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < VAD_COOLDOWN_MS) return;
   vadSpeaking = true;
@@ -1028,6 +1068,7 @@ function beginVoiceUtterance(now) {
   voiceInputSerial = utteranceSerial;
   vadSpeechStartedAt = now;
   vadSilenceStartedAt = 0;
+  vadVoiceHitFrames = 0;
   chunks = [];
   updateVoiceDraft("", true);
   interruptAssistant("speech");
@@ -1056,6 +1097,7 @@ function endVoiceUtterance() {
   if (!vadSpeaking) return;
   vadSpeaking = false;
   vadSilenceStartedAt = 0;
+  vadVoiceHitFrames = 0;
   recordButton.classList.remove("recording");
   if (recorder && recorder.state === "recording") {
     recorder.stop();
@@ -1066,13 +1108,26 @@ function tickVoiceActivity() {
   if (!voiceMode) return;
   const now = performance.now();
   const level = voiceLevel();
-  if (level >= VAD_THRESHOLD) {
-    beginVoiceUtterance(now);
+  const threshold = vadStartThreshold();
+  if (!vadSpeaking) {
+    vadNoiseFloor = vadNoiseFloor * 0.96 + Math.min(level, threshold) * 0.04;
+  }
+  if (level >= threshold) {
+    if (vadSpeaking) {
+      vadSilenceStartedAt = 0;
+    } else {
+      vadVoiceHitFrames += 1;
+    }
+    if (!vadSpeaking && vadVoiceHitFrames >= VAD_START_FRAMES) {
+      beginVoiceUtterance(now);
+    }
   } else if (vadSpeaking) {
     if (!vadSilenceStartedAt) vadSilenceStartedAt = now;
     if (now - vadSilenceStartedAt >= VAD_SILENCE_MS) {
       endVoiceUtterance();
     }
+  } else {
+    vadVoiceHitFrames = 0;
   }
   vadFrameId = window.requestAnimationFrame(tickVoiceActivity);
 }
@@ -1093,11 +1148,16 @@ async function startVoiceMode() {
   voiceMode = true;
   vadSpeaking = false;
   vadSilenceStartedAt = 0;
+  vadVoiceHitFrames = 0;
+  vadNoiseFloor = 0.012;
   recordButton.classList.add("listening");
   recordButton.title = "关闭连续语音输入";
   recordIcon.textContent = "●";
   setStatus("监听中");
   startLiveAsrCaption();
+  requestJson(`/api/asr/warmup?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}`, {
+    method: "POST",
+  }).catch(() => {});
   tickVoiceActivity();
 }
 
@@ -1122,6 +1182,8 @@ function stopVoiceMode() {
   vadAnalyser = null;
   vadData = null;
   vadSpeaking = false;
+  vadVoiceHitFrames = 0;
+  cancelCurrentAsr();
   recordButton.classList.remove("listening", "recording");
   recordButton.title = "开启连续语音输入";
   recordIcon.textContent = "●";
@@ -1133,20 +1195,34 @@ async function transcribeAndChat(blob, options = {}) {
   if (busy) {
     interruptAssistant(options.autoVoice ? "speech" : "interrupted");
   }
+  cancelCurrentAsr();
   asrBusy = true;
+  const asrRequestId = makeAsrRequestId();
+  currentAsrRequestId = asrRequestId;
+  currentAsrController = new AbortController();
   setStatus("识别中");
   try {
     const formData = new FormData();
     formData.append("audio", blob, "recording.webm");
-    const asr = await requestJson(`/api/asr?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}`, {
-      method: "POST",
-      body: formData,
-    });
+    const asr = await requestJson(
+      `/api/asr?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}&asr_id=${encodeURIComponent(asrRequestId)}`,
+      {
+        method: "POST",
+        body: formData,
+        signal: currentAsrController.signal,
+      },
+    );
     if (options.voiceSerial && options.voiceSerial !== voiceInputSerial) {
       asrBusy = false;
       return;
     }
+    if (currentAsrRequestId !== asrRequestId) {
+      asrBusy = false;
+      return;
+    }
     asrBusy = false;
+    currentAsrRequestId = null;
+    currentAsrController = null;
     const text = (asr.text || "").trim();
     if (!text) {
       clearVoiceDraft();
@@ -1156,9 +1232,19 @@ async function transcribeAndChat(blob, options = {}) {
     updateVoiceDraft(text, false);
     await runChat(text, { useVoiceDraft: true });
   } catch (error) {
+    if (error.name === "AbortError") {
+      asrBusy = false;
+      setStatus(voiceMode ? "监听中" : "已打断");
+      return;
+    }
     appendMessage("assistant", `出错：${error.message}`);
     setStatus("出错");
     asrBusy = false;
+  } finally {
+    if (currentAsrRequestId === asrRequestId) {
+      currentAsrRequestId = null;
+      currentAsrController = null;
+    }
   }
 }
 

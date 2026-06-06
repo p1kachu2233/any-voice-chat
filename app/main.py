@@ -15,7 +15,14 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.asr_service import convert_to_wav, save_upload, transcribe_audio
+from app.asr_service import (
+    cancel_asr,
+    convert_to_wav,
+    save_upload,
+    transcribe_audio,
+    transcribe_audio_bytes,
+    warmup_asr,
+)
 from app.gsv_client import check_gsv_api, stream_synthesize, synthesize
 from app.gsv_process import gsv_process_status, start_gsv_api, stop_gsv_api
 from app.log_store import APP_LOG_PATH, log_exception, read_tail
@@ -368,15 +375,32 @@ def stop_gsv():
 
 
 @app.post("/api/asr")
-async def asr(audio: UploadFile = File(...), language: str = "zh"):
+async def asr(audio: UploadFile = File(...), language: str = "zh", asr_id: Optional[str] = None):
     try:
-        raw_path = save_upload(await audio.read(), audio.filename)
-        wav_path = convert_to_wav(raw_path)
-        text = transcribe_audio(wav_path, language)
+        text = transcribe_audio_bytes(await audio.read(), language, asr_id=asr_id)
     except Exception as exc:
         log_exception("asr", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"text": text}
+
+
+@app.post("/api/asr/cancel/{asr_id}")
+def cancel_asr_request(asr_id: str):
+    asr_id = asr_id.strip()
+    if not asr_id:
+        raise HTTPException(status_code=400, detail="asr_id 不能为空")
+    cancel_asr(asr_id)
+    return {"ok": True, "asr_id": asr_id}
+
+
+@app.post("/api/asr/warmup")
+def warmup_asr_request(language: str = "zh"):
+    try:
+        warmup_asr(language)
+    except Exception as exc:
+        log_exception("asr.warmup", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "language": language}
 
 
 @app.post("/api/chat")
