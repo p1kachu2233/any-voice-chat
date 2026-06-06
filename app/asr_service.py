@@ -78,6 +78,8 @@ def convert_to_wav(input_path: Path) -> Path:
 
 
 def decode_audio_bytes(data: bytes) -> np.ndarray:
+    if not data or len(data) < 128:
+        return np.array([], dtype=np.float32)
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -96,6 +98,8 @@ def decode_audio_bytes(data: bytes) -> np.ndarray:
     result = subprocess.run(cmd, input=data, capture_output=True)
     if result.returncode != 0:
         error = result.stderr.decode("utf-8", errors="replace").strip()
+        if "Invalid data found when processing input" in error or "Error opening input file pipe:0" in error:
+            return np.array([], dtype=np.float32)
         raise RuntimeError(error or "ffmpeg audio decode failed")
     if not result.stdout:
         return np.array([], dtype=np.float32)

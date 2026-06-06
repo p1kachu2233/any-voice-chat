@@ -35,6 +35,8 @@ let vadAudioContext = null;
 let vadAnalyser = null;
 let vadData = null;
 let vadFrameId = null;
+let micVad = null;
+let rmsSource = null;
 let vadSpeaking = false;
 let vadSilenceStartedAt = 0;
 let vadSpeechStartedAt = 0;
@@ -42,6 +44,7 @@ let vadLastSubmitAt = 0;
 let vadPreChunks = [];
 let vadCaptureActive = false;
 let vadFinalizeTimer = null;
+let pendingRmsFinalize = false;
 let voiceInputSerial = 0;
 let asrBusy = false;
 let currentAsrController = null;
@@ -109,6 +112,7 @@ const defaultFormValues = {
   vad_min_speech_ms: VAD_MIN_SPEECH_MS,
   vad_cooldown_ms: VAD_COOLDOWN_MS,
   vad_pre_buffer_ms: VAD_PRE_BUFFER_MS,
+  vad_engine: "vad_web",
 };
 
 function setStatus(text) {
@@ -951,6 +955,9 @@ async function runChat(userText, options = {}) {
       setStatus(voiceMode ? "监听中" : "已打断");
       return;
     }
+    if (options.useVoiceDraft && voiceDraftBubble) {
+      finalizeVoiceDraft(text);
+    }
     if (assistantBubble) {
       assistantBubble.textContent = assistantText ? `${assistantText}\n\n出错：${error.message}` : `出错：${error.message}`;
     } else {
@@ -1067,36 +1074,119 @@ function assistantPlaybackActive() {
   return performance.now() - lastAssistantAudioScheduledAt < 500;
 }
 
-function beginVoiceUtterance(now) {
-  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < settingNumber("vad_cooldown_ms", VAD_COOLDOWN_MS)) return;
+function beginVoiceUtterance(now, options = {}) {
+  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < settingNumber("vad_cooldown_ms", VAD_COOLDOWN_MS)) {
+    return false;
+  }
   vadSpeaking = true;
   const utteranceSerial = voiceInputSerial + 1;
   voiceInputSerial = utteranceSerial;
   vadSpeechStartedAt = now;
   vadSilenceStartedAt = 0;
   vadVoiceHitFrames = 0;
-  const preBufferMs = settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS);
-  chunks = vadPreChunks.filter((item) => now - item.at <= preBufferMs).map((item) => item.blob);
+  chunks = [];
   vadCaptureActive = true;
+  pendingRmsFinalize = false;
   updateVoiceDraft("", true);
   interruptAssistant("speech");
+  if (!options.externalCapture) {
+    startRmsUtteranceRecorder();
+  }
 
   recordButton.classList.add("recording");
   setStatus("正在听你说话");
+  return true;
 }
 
-async function finalizeVoiceUtterance() {
+function startRmsUtteranceRecorder() {
+  if (!vadStream || !window.MediaRecorder) return;
+  const mimeType = chooseMimeType();
+  recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  };
+  recorder.onstop = () => {
+    if (pendingRmsFinalize) {
+      finalizeRmsVoiceUtterance();
+    }
+  };
+  recorder.start();
+}
+
+async function submitVoiceBlob(blob, voiceSerial) {
+  if (!voiceMode || !blob || blob.size <= 0) {
+    if (voiceMode) setStatus("监听中");
+    return;
+  }
+  vadLastSubmitAt = performance.now();
+  await transcribeAndChat(blob, { autoVoice: true, voiceSerial });
+}
+
+async function finalizeRmsVoiceUtterance() {
   const elapsed = performance.now() - vadSpeechStartedAt;
   const mimeType = recorder?.mimeType || "audio/webm";
   const blob = new Blob(chunks, { type: mimeType });
+  const voiceSerial = voiceInputSerial;
   vadCaptureActive = false;
+  pendingRmsFinalize = false;
   chunks = [];
   if (voiceMode && elapsed >= settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS) && blob.size > 0) {
-    vadLastSubmitAt = performance.now();
-    await transcribeAndChat(blob, { autoVoice: true, voiceSerial: voiceInputSerial });
+    await submitVoiceBlob(blob, voiceSerial);
   } else if (voiceMode) {
     setStatus("监听中");
   }
+}
+
+async function finalizeVadWebVoiceUtterance(audio) {
+  const elapsed = performance.now() - vadSpeechStartedAt;
+  const voiceSerial = voiceInputSerial;
+  vadSpeaking = false;
+  vadCaptureActive = false;
+  recordButton.classList.remove("recording");
+  if (!voiceMode || elapsed < settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS)) {
+    if (voiceMode) setStatus("监听中");
+    return;
+  }
+  try {
+    const wavBuffer = window.vad?.utils?.encodeWAV
+      ? window.vad.utils.encodeWAV(audio, 1, 16000, 1, 16)
+      : encodeFloat32Wav(audio, 16000);
+    await submitVoiceBlob(new Blob([wavBuffer], { type: "audio/wav" }), voiceSerial);
+  } catch (error) {
+    appendMessage("assistant", `出错：${error.message}`);
+    setStatus("出错");
+  }
+}
+
+function encodeFloat32Wav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeAscii = (offset, text) => {
+    for (let index = 0; index < text.length; index += 1) {
+      view.setUint8(offset + index, text.charCodeAt(index));
+    }
+  };
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1, offset += 2) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return buffer;
 }
 
 function endVoiceUtterance() {
@@ -1106,17 +1196,11 @@ function endVoiceUtterance() {
   vadVoiceHitFrames = 0;
   recordButton.classList.remove("recording");
   if (recorder && recorder.state === "recording") {
-    try {
-      recorder.requestData();
-    } catch (error) {
-      // Some browsers may ignore requestData while a chunk is already pending.
-    }
+    pendingRmsFinalize = true;
+    recorder.stop();
+  } else {
+    finalizeRmsVoiceUtterance();
   }
-  if (vadFinalizeTimer) window.clearTimeout(vadFinalizeTimer);
-  vadFinalizeTimer = window.setTimeout(() => {
-    vadFinalizeTimer = null;
-    finalizeVoiceUtterance();
-  }, 120);
 }
 
 function tickVoiceActivity() {
@@ -1148,18 +1232,86 @@ function tickVoiceActivity() {
 }
 
 async function startVoiceMode() {
-  if (!navigator.mediaDevices || !window.MediaRecorder) {
-    setStatus("浏览器不支持录音");
+  if (!navigator.mediaDevices) {
+    setStatus("浏览器不支持麦克风");
     return;
   }
   await ensureAudioContext().catch(() => {});
+  settings = await requestJson("/api/settings").catch(() => settings);
+  const engine = settings.vad_engine || "vad_web";
+  if (engine === "vad_web" && window.vad?.MicVAD) {
+    try {
+      await startVadWebVoiceMode();
+      return;
+    } catch (error) {
+      console.warn("vad-web failed, falling back to RMS VAD", error);
+      setStatus(`vad-web 启动失败，已切换 RMS：${error.message}`);
+      window.setTimeout(() => startRmsVoiceMode().catch((fallbackError) => setStatus(`语音启动失败：${fallbackError.message}`)), 200);
+      return;
+    }
+  }
+  await startRmsVoiceMode();
+}
+
+async function startVadWebVoiceMode() {
+  voiceMode = true;
+  vadSpeaking = false;
+  vadSilenceStartedAt = 0;
+  vadVoiceHitFrames = 0;
+  vadCaptureActive = false;
+  chunks = [];
+  setStatus("正在加载 vad-web");
+  micVad = await window.vad.MicVAD.new({
+    model: "v5",
+    baseAssetPath: "/static/vendor/vad-web/",
+    onnxWASMBasePath: "/static/vendor/onnxruntime-web/",
+    preSpeechPadMs: settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS),
+    redemptionMs: settingNumber("vad_silence_ms", VAD_SILENCE_MS),
+    minSpeechMs: settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS),
+    startOnLoad: false,
+    getStream: async () => navigator.mediaDevices.getUserMedia(audioConstraints()),
+    onSpeechStart: () => {
+      beginVoiceUtterance(performance.now(), { externalCapture: true });
+    },
+    onSpeechEnd: (audio) => {
+      if (vadCaptureActive) {
+        finalizeVadWebVoiceUtterance(audio);
+      } else if (voiceMode) {
+        setStatus("监听中");
+      }
+    },
+    onVADMisfire: () => {
+      vadSpeaking = false;
+      vadCaptureActive = false;
+      recordButton.classList.remove("recording");
+      if (voiceMode) setStatus("监听中");
+    },
+    ortConfig: (ort) => {
+      ort.env.logLevel = "error";
+    },
+  });
+  await micVad.start();
+  recordButton.classList.add("listening");
+  recordButton.title = "关闭连续语音输入";
+  recordIcon.textContent = "●";
+  setStatus("监听中");
+  startLiveAsrCaption();
+  requestJson(`/api/asr/warmup?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}`, {
+    method: "POST",
+  }).catch(() => {});
+}
+
+async function startRmsVoiceMode() {
+  if (!window.MediaRecorder) {
+    throw new Error("浏览器不支持录音");
+  }
   vadStream = await navigator.mediaDevices.getUserMedia(audioConstraints());
   vadAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const source = vadAudioContext.createMediaStreamSource(vadStream);
+  rmsSource = vadAudioContext.createMediaStreamSource(vadStream);
   vadAnalyser = vadAudioContext.createAnalyser();
   vadAnalyser.fftSize = 1024;
   vadData = new Uint8Array(vadAnalyser.fftSize);
-  source.connect(vadAnalyser);
+  rmsSource.connect(vadAnalyser);
   voiceMode = true;
   vadSpeaking = false;
   vadSilenceStartedAt = 0;
@@ -1168,19 +1320,7 @@ async function startVoiceMode() {
   vadPreChunks = [];
   vadCaptureActive = false;
   chunks = [];
-  const mimeType = chooseMimeType();
-  recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
-  recorder.ondataavailable = (event) => {
-    if (!event.data || event.data.size <= 0) return;
-    const item = { blob: event.data, at: performance.now() };
-    vadPreChunks.push(item);
-    const keepMs = settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS) + 1200;
-    vadPreChunks = vadPreChunks.filter((chunk) => item.at - chunk.at <= keepMs);
-    if (vadCaptureActive) {
-      chunks.push(event.data);
-    }
-  };
-  recorder.start(VAD_RECORDER_TIMESLICE_MS);
+  recorder = null;
   recordButton.classList.add("listening");
   recordButton.title = "关闭连续语音输入";
   recordIcon.textContent = "●";
@@ -1198,8 +1338,17 @@ function stopVoiceMode() {
     window.cancelAnimationFrame(vadFrameId);
     vadFrameId = null;
   }
+  if (micVad) {
+    try {
+      micVad.destroy();
+    } catch (error) {
+      // Ignore shutdown errors from the browser audio graph.
+    }
+    micVad = null;
+  }
   if (recorder && recorder.state === "recording") {
     vadCaptureActive = false;
+    pendingRmsFinalize = false;
     recorder.stop();
   }
   if (vadFinalizeTimer) {
@@ -1217,11 +1366,13 @@ function stopVoiceMode() {
   vadAudioContext = null;
   vadAnalyser = null;
   vadData = null;
+  rmsSource = null;
   vadSpeaking = false;
   vadVoiceHitFrames = 0;
   vadPreChunks = [];
   chunks = [];
   vadCaptureActive = false;
+  pendingRmsFinalize = false;
   recorder = null;
   cancelCurrentAsr();
   recordButton.classList.remove("listening", "recording");
@@ -1243,7 +1394,8 @@ async function transcribeAndChat(blob, options = {}) {
   setStatus("识别中");
   try {
     const formData = new FormData();
-    formData.append("audio", blob, "recording.webm");
+    const filename = blob.type.includes("wav") ? "recording.wav" : "recording.webm";
+    formData.append("audio", blob, filename);
     const asr = await requestJson(
       `/api/asr?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}&asr_id=${encodeURIComponent(asrRequestId)}`,
       {

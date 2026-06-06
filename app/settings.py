@@ -51,12 +51,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "vad_min_speech_ms": 500,
     "vad_cooldown_ms": 900,
     "vad_pre_buffer_ms": 500,
+    "vad_engine": "vad_web",
 }
 
 _settings_lock = threading.Lock()
 DEFAULT_IF_EMPTY_KEYS = {"ref_audio_path", "prompt_text", "prompt_lang", "text_lang"}
 VALID_TEXT_SPLIT_METHODS = {"cut0", "cut1", "cut2", "cut3", "cut4", "cut5"}
 VALID_TEXT_DISPLAY_MODES = {"speech_sync", "text_first"}
+VALID_VAD_ENGINES = {"vad_web", "rms"}
 
 
 def _coerce_value(key: str, value: Any) -> Any:
@@ -103,6 +105,8 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
     settings["vad_min_speech_ms"] = min(max(settings["vad_min_speech_ms"], 100), 3000)
     settings["vad_cooldown_ms"] = min(max(settings["vad_cooldown_ms"], 0), 5000)
     settings["vad_pre_buffer_ms"] = min(max(settings["vad_pre_buffer_ms"], 0), 2000)
+    if settings["vad_engine"] not in VALID_VAD_ENGINES:
+        settings["vad_engine"] = DEFAULT_SETTINGS["vad_engine"]
     if settings["text_display_mode"] not in VALID_TEXT_DISPLAY_MODES:
         settings["text_display_mode"] = DEFAULT_SETTINGS["text_display_mode"]
     return settings

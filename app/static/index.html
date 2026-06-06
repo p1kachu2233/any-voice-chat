@@ -150,10 +150,21 @@
 
             <div class="section-title compact">
               <h3>语音输入 VAD</h3>
-              <p>当前使用浏览器端音量能量检测，不是 FunASR/WebRTC VAD。</p>
+              <p>默认使用本地 vad-web 模型检测人声；RMS 音量检测作为备用。</p>
             </div>
 
             <div class="field-grid three">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">VAD 引擎</span>
+                  <span class="help-icon" tabindex="0" data-tip="vad-web 使用本地 Silero VAD 模型判断人声；RMS 只看麦克风音量，适合作为兼容备用。" aria-label="vad-web 使用本地 Silero VAD 模型判断人声；RMS 只看麦克风音量，适合作为兼容备用。">i</span>
+                </span>
+                <select name="vad_engine">
+                  <option value="vad_web">vad-web 模型</option>
+                  <option value="rms">RMS 音量备用</option>
+                </select>
+              </label>
+
               <label class="field">
                 <span class="field-head">
                   <span class="field-name">基础阈值</span>
@@ -471,6 +482,8 @@
       </aside>
     </main>
 
+    <script src="/static/vendor/onnxruntime-web/ort.wasm.min.js"></script>
+    <script src="/static/vendor/vad-web/bundle.min.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
