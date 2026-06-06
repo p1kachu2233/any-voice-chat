@@ -58,6 +58,7 @@ let currentTypewriter = null;
 let activeChatId = 0;
 let voiceDraftBubble = null;
 let voiceDraftText = "";
+let pageCleanupDone = false;
 const inlineAudioStreams = new Map();
 const activeAudioSources = new Set();
 const VAD_THRESHOLD = 0.055;
@@ -700,10 +701,7 @@ function makeChatRequestId() {
 
 function cancelCurrentChat() {
   if (!currentChatRequestId) return;
-  fetch(`/api/chat/cancel/${encodeURIComponent(currentChatRequestId)}`, {
-    method: "POST",
-    keepalive: true,
-  }).catch(() => {});
+  sendCancelRequest(`/api/chat/cancel/${encodeURIComponent(currentChatRequestId)}`);
   currentChatRequestId = null;
 }
 
@@ -716,16 +714,57 @@ function makeAsrRequestId() {
 
 function cancelCurrentAsr() {
   if (currentAsrRequestId) {
-    fetch(`/api/asr/cancel/${encodeURIComponent(currentAsrRequestId)}`, {
-      method: "POST",
-      keepalive: true,
-    }).catch(() => {});
+    sendCancelRequest(`/api/asr/cancel/${encodeURIComponent(currentAsrRequestId)}`);
   }
   if (currentAsrController) {
     currentAsrController.abort();
   }
   currentAsrRequestId = null;
   currentAsrController = null;
+}
+
+function sendCancelRequest(url) {
+  try {
+    if (navigator.sendBeacon) {
+      const empty = new Blob([], { type: "text/plain" });
+      if (navigator.sendBeacon(url, empty)) return;
+    }
+  } catch (error) {
+    // Fall back to fetch below.
+  }
+  fetch(url, {
+    method: "POST",
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function cleanupPageRequests() {
+  if (pageCleanupDone) return;
+  pageCleanupDone = true;
+  currentChatInterrupted = true;
+  activeChatId += 1;
+  cancelCurrentChat();
+  cancelCurrentAsr();
+  if (currentChatController) {
+    currentChatController.abort();
+    currentChatController = null;
+  }
+  if (currentAsrController) {
+    currentAsrController.abort();
+    currentAsrController = null;
+  }
+  if (currentTypewriter) {
+    currentTypewriter.cancel();
+    currentTypewriter = null;
+  }
+  stopAudioPlayback();
+  if (voiceMode) {
+    stopVoiceMode({ silent: true, keepVad: false });
+  } else {
+    destroyPreloadedVad();
+  }
+  busy = false;
+  asrBusy = false;
 }
 
 async function playNextAudio() {
@@ -1447,14 +1486,18 @@ async function startRmsVoiceMode() {
   tickVoiceActivity();
 }
 
-function stopVoiceMode() {
+function stopVoiceMode(options = {}) {
   voiceMode = false;
   if (vadFrameId) {
     window.cancelAnimationFrame(vadFrameId);
     vadFrameId = null;
   }
   if (micVad) {
-    micVad.pause().catch(() => {});
+    if (options.keepVad === false) {
+      destroyPreloadedVad();
+    } else {
+      micVad.pause().catch(() => {});
+    }
   }
   if (recorder && recorder.state === "recording") {
     vadCaptureActive = false;
@@ -1484,12 +1527,16 @@ function stopVoiceMode() {
   vadCaptureActive = false;
   pendingRmsFinalize = false;
   recorder = null;
-  cancelCurrentAsr();
+  if (!options.silent) {
+    cancelCurrentAsr();
+  }
   recordButton.classList.remove("listening", "recording");
   recordButton.title = "开启连续语音输入";
   recordIcon.textContent = "●";
   clearVoiceDraft();
-  setStatus("连续语音已关闭");
+  if (!options.silent) {
+    setStatus("连续语音已关闭");
+  }
 }
 
 async function transcribeAndChat(blob, options = {}) {
@@ -1572,6 +1619,9 @@ if (preloadVoiceButton) {
     preloadVoiceAssets({ vad: true, asr: true, announce: true });
   });
 }
+
+window.addEventListener("pagehide", cleanupPageRequests);
+window.addEventListener("beforeunload", cleanupPageRequests);
 
 if (speechToggle) {
   speechToggle.addEventListener("change", async () => {
