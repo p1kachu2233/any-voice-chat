@@ -28,6 +28,7 @@ let currentObjectUrl = null;
 let pinnedHelpAnchor = null;
 let audioContext = null;
 let streamPlaybackTime = 0;
+let lastAssistantAudioScheduledAt = 0;
 let voiceMode = false;
 let vadStream = null;
 let vadAudioContext = null;
@@ -52,18 +53,17 @@ let voiceDraftText = "";
 const inlineAudioStreams = new Map();
 const activeAudioSources = new Set();
 const VAD_THRESHOLD = 0.055;
-const VAD_BARGE_THRESHOLD = 0.038;
 const VAD_NOISE_MULTIPLIER = 3.2;
-const VAD_BARGE_NOISE_MULTIPLIER = 2.1;
 const VAD_NOISE_OFFSET = 0.025;
-const VAD_BARGE_NOISE_OFFSET = 0.014;
+const VAD_ASSISTANT_THRESHOLD = 0.095;
+const VAD_ASSISTANT_NOISE_MULTIPLIER = 5.2;
+const VAD_ASSISTANT_NOISE_OFFSET = 0.052;
 const VAD_START_FRAMES = 6;
 const VAD_SILENCE_MS = 1000;
 const VAD_MIN_SPEECH_MS = 500;
 const VAD_COOLDOWN_MS = 900;
 let vadNoiseFloor = 0.012;
 let vadVoiceHitFrames = 0;
-let vadBargeInActive = false;
 
 const numericFields = new Set([
   "openai_temperature",
@@ -431,6 +431,7 @@ function schedulePcmChunk(ctx, bytes, format) {
   activeAudioSources.add(source);
   source.onended = () => activeAudioSources.delete(source);
   source.start(startTime);
+  lastAssistantAudioScheduledAt = performance.now();
   streamPlaybackTime += buffer.duration;
   return { frames: frameCount, startTime };
 }
@@ -623,6 +624,7 @@ function stopAudioPlayback() {
   } else {
     streamPlaybackTime = 0;
   }
+  lastAssistantAudioScheduledAt = 0;
   audioPlaying = false;
 }
 
@@ -818,6 +820,7 @@ async function runChat(userText, options = {}) {
       setStatus("检查 GSV 连接");
       await assertGsvReady();
       await ensureAudioContext().catch(() => {});
+      stopAudioPlayback();
     }
 
     setStatus("回复生成中");
@@ -899,6 +902,10 @@ async function runChat(userText, options = {}) {
       if (event.event === "done") {
         finalAssistantText = event.assistant_text || finalAssistantText;
       }
+    }
+
+    if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) {
+      return;
     }
 
     if (typewriter) {
@@ -1008,26 +1015,20 @@ function voiceLevel() {
 }
 
 function vadStartThreshold() {
+  if (assistantPlaybackActive()) {
+    return Math.max(
+      VAD_ASSISTANT_THRESHOLD,
+      vadNoiseFloor * VAD_ASSISTANT_NOISE_MULTIPLIER,
+      vadNoiseFloor + VAD_ASSISTANT_NOISE_OFFSET,
+    );
+  }
   return Math.max(VAD_THRESHOLD, vadNoiseFloor * VAD_NOISE_MULTIPLIER, vadNoiseFloor + VAD_NOISE_OFFSET);
 }
 
-function vadBargeThreshold() {
-  return Math.max(
-    VAD_BARGE_THRESHOLD,
-    vadNoiseFloor * VAD_BARGE_NOISE_MULTIPLIER,
-    vadNoiseFloor + VAD_BARGE_NOISE_OFFSET,
-  );
-}
-
-function hasAssistantOutputInProgress() {
-  return busy || currentChatRequestId || currentChatController || currentTypewriter || audioPlaying || audioQueue.length > 0 || activeAudioSources.size > 0;
-}
-
-function bargeInOnVoice() {
-  if (vadBargeInActive || !hasAssistantOutputInProgress()) return;
-  vadBargeInActive = true;
-  updateVoiceDraft("", true);
-  interruptAssistant("speech");
+function assistantPlaybackActive() {
+  if (audioPlaying || activeAudioSources.size > 0 || audioQueue.length > 0) return true;
+  if (audioContext && streamPlaybackTime > audioContext.currentTime + 0.05) return true;
+  return performance.now() - lastAssistantAudioScheduledAt < 500;
 }
 
 function beginVoiceUtterance(now) {
@@ -1040,6 +1041,7 @@ function beginVoiceUtterance(now) {
   vadVoiceHitFrames = 0;
   chunks = [];
   updateVoiceDraft("", true);
+  interruptAssistant("speech");
 
   const mimeType = chooseMimeType();
   recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
@@ -1066,7 +1068,6 @@ function endVoiceUtterance() {
   vadSpeaking = false;
   vadSilenceStartedAt = 0;
   vadVoiceHitFrames = 0;
-  vadBargeInActive = false;
   recordButton.classList.remove("recording");
   if (recorder && recorder.state === "recording") {
     recorder.stop();
@@ -1078,12 +1079,8 @@ function tickVoiceActivity() {
   const now = performance.now();
   const level = voiceLevel();
   const threshold = vadStartThreshold();
-  const bargeThreshold = vadBargeThreshold();
   if (!vadSpeaking) {
-    vadNoiseFloor = vadNoiseFloor * 0.96 + Math.min(level, bargeThreshold) * 0.04;
-  }
-  if (level >= bargeThreshold) {
-    bargeInOnVoice();
+    vadNoiseFloor = vadNoiseFloor * 0.96 + Math.min(level, threshold) * 0.04;
   }
   if (level >= threshold) {
     if (vadSpeaking) {
@@ -1101,7 +1098,6 @@ function tickVoiceActivity() {
     }
   } else {
     vadVoiceHitFrames = 0;
-    if (!vadSpeaking) vadBargeInActive = false;
   }
   vadFrameId = window.requestAnimationFrame(tickVoiceActivity);
 }
@@ -1123,7 +1119,6 @@ async function startVoiceMode() {
   vadSpeaking = false;
   vadSilenceStartedAt = 0;
   vadVoiceHitFrames = 0;
-  vadBargeInActive = false;
   vadNoiseFloor = 0.012;
   recordButton.classList.add("listening");
   recordButton.title = "关闭连续语音输入";
