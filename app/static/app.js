@@ -49,8 +49,6 @@ let currentTypewriter = null;
 let activeChatId = 0;
 let voiceDraftBubble = null;
 let voiceDraftText = "";
-let speechRecognition = null;
-let speechRecognitionRunning = false;
 const inlineAudioStreams = new Map();
 const activeAudioSources = new Set();
 const VAD_THRESHOLD = 0.055;
@@ -989,65 +987,13 @@ function audioConstraints() {
   };
 }
 
-function speechRecognitionLanguage() {
-  const lang = form.elements.asr_language?.value || "zh";
-  return lang === "yue" ? "yue-Hant-HK" : "zh-CN";
-}
-
 function startLiveAsrCaption() {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) return;
-  stopLiveAsrCaption();
-  speechRecognition = new Recognition();
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true;
-  speechRecognition.lang = speechRecognitionLanguage();
-  speechRecognition.onresult = (event) => {
-    let transcript = "";
-    for (let index = 0; index < event.results.length; index += 1) {
-      transcript += event.results[index][0]?.transcript || "";
-    }
-    if (transcript.trim()) {
-      updateVoiceDraft(transcript.trim(), true);
-    }
-  };
-  speechRecognition.onerror = () => {};
-  speechRecognition.onend = () => {
-    speechRecognitionRunning = false;
-    if (voiceMode) {
-      window.setTimeout(() => {
-        if (voiceMode && speechRecognition && !speechRecognitionRunning) {
-          try {
-            speechRecognition.start();
-            speechRecognitionRunning = true;
-          } catch (error) {
-            speechRecognitionRunning = false;
-          }
-        }
-      }, 250);
-    }
-  };
-  try {
-    speechRecognition.start();
-    speechRecognitionRunning = true;
-  } catch (error) {
-    speechRecognitionRunning = false;
-  }
+  // Browser SpeechRecognition is intentionally disabled here because it
+  // accumulates noisy interim text and can pick up the assistant's speaker audio.
 }
 
 function stopLiveAsrCaption() {
-  if (!speechRecognition) return;
-  const recognition = speechRecognition;
-  speechRecognition = null;
-  speechRecognitionRunning = false;
-  recognition.onend = null;
-  recognition.onresult = null;
-  recognition.onerror = null;
-  try {
-    recognition.stop();
-  } catch (error) {
-    // Already stopped.
-  }
+  // Kept as a no-op so voice-mode cleanup can call it safely.
 }
 
 function voiceLevel() {
