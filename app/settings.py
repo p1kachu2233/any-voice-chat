@@ -15,6 +15,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "openai_base_url": "https://api.openai.com/v1",
     "openai_model": "gpt-4o-mini",
     "openai_temperature": 0.7,
+    "openai_top_p": "",
+    "openai_top_k": "",
+    "openai_frequency_penalty": "",
+    "openai_presence_penalty": "",
+    "openai_repetition_penalty": "",
+    "openai_max_tokens": "",
+    "openai_seed": "",
     "system_prompt": "你是一个适合语音聊天的助手。回答要自然、简洁，像真人对话一样。",
     "asr_language": "zh",
     "enable_gsv_tts": True,
@@ -66,9 +73,30 @@ DEFAULT_IF_EMPTY_KEYS = {"ref_audio_path", "prompt_text", "prompt_lang", "text_l
 VALID_TEXT_SPLIT_METHODS = {"cut0", "cut1", "cut2", "cut3", "cut4", "cut5"}
 VALID_TEXT_DISPLAY_MODES = {"speech_sync", "text_first"}
 VALID_VAD_ENGINES = {"vad_web", "rms"}
+OPTIONAL_OPENAI_FLOAT_KEYS = {
+    "openai_top_p",
+    "openai_frequency_penalty",
+    "openai_presence_penalty",
+    "openai_repetition_penalty",
+}
+OPTIONAL_OPENAI_INT_KEYS = {"openai_top_k", "openai_max_tokens", "openai_seed"}
 
 
 def _coerce_value(key: str, value: Any) -> Any:
+    if key in OPTIONAL_OPENAI_FLOAT_KEYS:
+        if value in (None, ""):
+            return ""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return ""
+    if key in OPTIONAL_OPENAI_INT_KEYS:
+        if value in (None, ""):
+            return ""
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return ""
     default = DEFAULT_SETTINGS[key]
     if isinstance(default, bool):
         if isinstance(value, str):
@@ -98,6 +126,19 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
             settings[key] = DEFAULT_SETTINGS[key]
     if settings["text_split_method"] not in VALID_TEXT_SPLIT_METHODS:
         settings["text_split_method"] = DEFAULT_SETTINGS["text_split_method"]
+    settings["openai_temperature"] = min(max(settings["openai_temperature"], 0.0), 2.0)
+    if settings["openai_top_p"] != "":
+        settings["openai_top_p"] = min(max(settings["openai_top_p"], 0.0), 1.0)
+    if settings["openai_top_k"] != "":
+        settings["openai_top_k"] = min(max(settings["openai_top_k"], 1), 1000)
+    if settings["openai_frequency_penalty"] != "":
+        settings["openai_frequency_penalty"] = min(max(settings["openai_frequency_penalty"], -2.0), 2.0)
+    if settings["openai_presence_penalty"] != "":
+        settings["openai_presence_penalty"] = min(max(settings["openai_presence_penalty"], -2.0), 2.0)
+    if settings["openai_repetition_penalty"] != "":
+        settings["openai_repetition_penalty"] = min(max(settings["openai_repetition_penalty"], 0.01), 2.0)
+    if settings["openai_max_tokens"] != "":
+        settings["openai_max_tokens"] = min(max(settings["openai_max_tokens"], 1), 200000)
     settings["tts_min_segment_chars"] = min(max(settings["tts_min_segment_chars"], 1), 80)
     settings["tts_soft_segment_chars"] = min(max(settings["tts_soft_segment_chars"], 0), 500)
     settings["tts_force_segment_chars"] = min(max(settings["tts_force_segment_chars"], 0), 1000)

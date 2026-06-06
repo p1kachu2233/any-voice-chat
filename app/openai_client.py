@@ -45,6 +45,18 @@ def _payload(settings: dict[str, Any], user_text: str, history: list[dict[str, s
         "messages": _build_messages(settings, user_text, history),
         "temperature": float(settings.get("openai_temperature") or 0.7),
     }
+    optional_params = {
+        "top_p": settings.get("openai_top_p"),
+        "top_k": settings.get("openai_top_k"),
+        "frequency_penalty": settings.get("openai_frequency_penalty"),
+        "presence_penalty": settings.get("openai_presence_penalty"),
+        "repetition_penalty": settings.get("openai_repetition_penalty"),
+        "max_tokens": settings.get("openai_max_tokens"),
+        "seed": settings.get("openai_seed"),
+    }
+    for key, value in optional_params.items():
+        if value not in (None, ""):
+            payload[key] = value
     if stream:
         payload["stream"] = True
     return payload

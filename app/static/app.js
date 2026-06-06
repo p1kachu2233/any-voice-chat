@@ -104,11 +104,27 @@ const numericFields = new Set([
   "rms_vad_min_speech_ms",
   "rms_vad_cooldown_ms",
 ]);
+const optionalNumericFields = new Set([
+  "openai_top_p",
+  "openai_top_k",
+  "openai_frequency_penalty",
+  "openai_presence_penalty",
+  "openai_repetition_penalty",
+  "openai_max_tokens",
+  "openai_seed",
+]);
 const checkboxFields = new Set(["enable_gsv_tts", "auto_preload_vad", "auto_preload_asr"]);
 const defaultFormValues = {
   tts_min_segment_chars: 10,
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,
+  openai_top_p: "",
+  openai_top_k: "",
+  openai_frequency_penalty: "",
+  openai_presence_penalty: "",
+  openai_repetition_penalty: "",
+  openai_max_tokens: "",
+  openai_seed: "",
   text_display_mode: "speech_sync",
   vad_engine: "vad_web",
   vad_web_positive_threshold: 0.5,
@@ -826,7 +842,12 @@ async function playNextAudio() {
 function readForm() {
   const data = {};
   new FormData(form).forEach((value, key) => {
-    data[key] = numericFields.has(key) ? Number(value) : value;
+    if (optionalNumericFields.has(key)) {
+      const text = String(value).trim();
+      data[key] = text === "" ? "" : Number(text);
+    } else {
+      data[key] = numericFields.has(key) ? Number(value) : value;
+    }
   });
   checkboxFields.forEach((key) => {
     const field = form.elements[key];
