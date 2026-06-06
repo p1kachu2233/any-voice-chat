@@ -94,6 +94,11 @@ const numericFields = new Set([
   "vad_min_speech_ms",
   "vad_cooldown_ms",
   "vad_pre_buffer_ms",
+  "vad_web_positive_threshold",
+  "vad_web_negative_threshold",
+  "vad_web_redemption_ms",
+  "vad_web_pre_speech_pad_ms",
+  "vad_web_min_speech_ms",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts"]);
 const defaultFormValues = {
@@ -113,6 +118,11 @@ const defaultFormValues = {
   vad_cooldown_ms: VAD_COOLDOWN_MS,
   vad_pre_buffer_ms: VAD_PRE_BUFFER_MS,
   vad_engine: "vad_web",
+  vad_web_positive_threshold: 0.5,
+  vad_web_negative_threshold: 0.35,
+  vad_web_redemption_ms: 1000,
+  vad_web_pre_speech_pad_ms: 500,
+  vad_web_min_speech_ms: 500,
 };
 
 function setStatus(text) {
@@ -770,6 +780,14 @@ function fillForm(data) {
       field.value = value ?? "";
     }
   }
+  updateVadEnginePanels();
+}
+
+function updateVadEnginePanels() {
+  const engine = form.elements.vad_engine?.value || settings.vad_engine || defaultFormValues.vad_engine;
+  document.querySelectorAll("[data-vad-engine-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.vadEnginePanel !== engine;
+  });
 }
 
 async function requestJson(url, options = {}) {
@@ -1265,9 +1283,11 @@ async function startVadWebVoiceMode() {
     model: "v5",
     baseAssetPath: "/static/vendor/vad-web/",
     onnxWASMBasePath: "/static/vendor/onnxruntime-web/",
-    preSpeechPadMs: settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS),
-    redemptionMs: settingNumber("vad_silence_ms", VAD_SILENCE_MS),
-    minSpeechMs: settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS),
+    positiveSpeechThreshold: settingNumber("vad_web_positive_threshold", 0.5),
+    negativeSpeechThreshold: settingNumber("vad_web_negative_threshold", 0.35),
+    redemptionMs: settingNumber("vad_web_redemption_ms", 1000),
+    preSpeechPadMs: settingNumber("vad_web_pre_speech_pad_ms", VAD_PRE_BUFFER_MS),
+    minSpeechMs: settingNumber("vad_web_min_speech_ms", VAD_MIN_SPEECH_MS),
     startOnLoad: false,
     getStream: async () => navigator.mediaDevices.getUserMedia(audioConstraints()),
     onSpeechStart: () => {
@@ -1452,6 +1472,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
 document.querySelector("#saveSettings").addEventListener("click", () => {
   saveSettings().catch((error) => setStatus(`保存失败：${error.message}`));
 });
+
+if (form.elements.vad_engine) {
+  form.elements.vad_engine.addEventListener("change", updateVadEnginePanels);
+}
 
 if (speechToggle) {
   speechToggle.addEventListener("change", async () => {

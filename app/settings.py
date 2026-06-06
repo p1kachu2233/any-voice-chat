@@ -52,6 +52,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "vad_cooldown_ms": 900,
     "vad_pre_buffer_ms": 500,
     "vad_engine": "vad_web",
+    "vad_web_positive_threshold": 0.5,
+    "vad_web_negative_threshold": 0.35,
+    "vad_web_redemption_ms": 1000,
+    "vad_web_pre_speech_pad_ms": 500,
+    "vad_web_min_speech_ms": 500,
 }
 
 _settings_lock = threading.Lock()
@@ -107,6 +112,13 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
     settings["vad_pre_buffer_ms"] = min(max(settings["vad_pre_buffer_ms"], 0), 2000)
     if settings["vad_engine"] not in VALID_VAD_ENGINES:
         settings["vad_engine"] = DEFAULT_SETTINGS["vad_engine"]
+    settings["vad_web_positive_threshold"] = min(max(settings["vad_web_positive_threshold"], 0.01), 0.99)
+    settings["vad_web_negative_threshold"] = min(max(settings["vad_web_negative_threshold"], 0.01), 0.99)
+    if settings["vad_web_negative_threshold"] >= settings["vad_web_positive_threshold"]:
+        settings["vad_web_negative_threshold"] = max(0.01, settings["vad_web_positive_threshold"] - 0.05)
+    settings["vad_web_redemption_ms"] = min(max(settings["vad_web_redemption_ms"], 100), 5000)
+    settings["vad_web_pre_speech_pad_ms"] = min(max(settings["vad_web_pre_speech_pad_ms"], 0), 2000)
+    settings["vad_web_min_speech_ms"] = min(max(settings["vad_web_min_speech_ms"], 100), 3000)
     if settings["text_display_mode"] not in VALID_TEXT_DISPLAY_MODES:
         settings["text_display_mode"] = DEFAULT_SETTINGS["text_display_mode"]
     return settings

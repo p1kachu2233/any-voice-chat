@@ -164,7 +164,51 @@
                   <option value="rms">RMS 音量备用</option>
                 </select>
               </label>
+            </div>
 
+            <div class="field-grid three" data-vad-engine-panel="vad_web">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">开始概率</span>
+                  <span class="help-icon" tabindex="0" data-tip="Silero VAD 判定为人声的概率超过该值时开始录音；越高越不容易误触发。" aria-label="Silero VAD 判定为人声的概率超过该值时开始录音；越高越不容易误触发。">i</span>
+                </span>
+                <input name="vad_web_positive_threshold" type="number" min="0.01" max="0.99" step="0.01" value="0.5" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">结束概率</span>
+                  <span class="help-icon" tabindex="0" data-tip="人声概率低于该值会累计静音结束；必须低于开始概率，越低越不容易截断句尾。" aria-label="人声概率低于该值会累计静音结束；必须低于开始概率，越低越不容易截断句尾。">i</span>
+                </span>
+                <input name="vad_web_negative_threshold" type="number" min="0.01" max="0.99" step="0.01" value="0.35" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">静音宽限 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="vad-web 的 redemptionMs；检测到非人声后等待多久才结束本句话。" aria-label="vad-web 的 redemptionMs；检测到非人声后等待多久才结束本句话。">i</span>
+                </span>
+                <input name="vad_web_redemption_ms" type="number" min="100" max="5000" step="50" value="1000" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">预录缓冲 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="vad-web 的 preSpeechPadMs；确认开口后保留前面一小段音频，避免吞句首。" aria-label="vad-web 的 preSpeechPadMs；确认开口后保留前面一小段音频，避免吞句首。">i</span>
+                </span>
+                <input name="vad_web_pre_speech_pad_ms" type="number" min="0" max="2000" step="50" value="500" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">最短语音 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="vad-web 的 minSpeechMs；短于该时长的片段会被当作误触发。" aria-label="vad-web 的 minSpeechMs；短于该时长的片段会被当作误触发。">i</span>
+                </span>
+                <input name="vad_web_min_speech_ms" type="number" min="100" max="3000" step="50" value="500" />
+              </label>
+            </div>
+
+            <div class="field-grid three" data-vad-engine-panel="rms">
               <label class="field">
                 <span class="field-head">
                   <span class="field-name">基础阈值</span>
