@@ -40,6 +40,17 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "tts_soft_segment_chars": 60,
     "tts_force_segment_chars": 90,
     "text_display_mode": "speech_sync",
+    "vad_threshold": 0.055,
+    "vad_noise_multiplier": 3.2,
+    "vad_noise_offset": 0.025,
+    "vad_assistant_threshold": 0.095,
+    "vad_assistant_noise_multiplier": 5.2,
+    "vad_assistant_noise_offset": 0.052,
+    "vad_start_frames": 6,
+    "vad_silence_ms": 1000,
+    "vad_min_speech_ms": 500,
+    "vad_cooldown_ms": 900,
+    "vad_pre_buffer_ms": 500,
 }
 
 _settings_lock = threading.Lock()
@@ -81,6 +92,17 @@ def normalize_settings(values: dict[str, Any]) -> dict[str, Any]:
     settings["tts_min_segment_chars"] = min(max(settings["tts_min_segment_chars"], 1), 80)
     settings["tts_soft_segment_chars"] = min(max(settings["tts_soft_segment_chars"], 0), 500)
     settings["tts_force_segment_chars"] = min(max(settings["tts_force_segment_chars"], 0), 1000)
+    settings["vad_threshold"] = min(max(settings["vad_threshold"], 0.001), 0.3)
+    settings["vad_noise_multiplier"] = min(max(settings["vad_noise_multiplier"], 1.0), 10.0)
+    settings["vad_noise_offset"] = min(max(settings["vad_noise_offset"], 0.0), 0.3)
+    settings["vad_assistant_threshold"] = min(max(settings["vad_assistant_threshold"], 0.001), 0.5)
+    settings["vad_assistant_noise_multiplier"] = min(max(settings["vad_assistant_noise_multiplier"], 1.0), 15.0)
+    settings["vad_assistant_noise_offset"] = min(max(settings["vad_assistant_noise_offset"], 0.0), 0.5)
+    settings["vad_start_frames"] = min(max(settings["vad_start_frames"], 1), 30)
+    settings["vad_silence_ms"] = min(max(settings["vad_silence_ms"], 200), 5000)
+    settings["vad_min_speech_ms"] = min(max(settings["vad_min_speech_ms"], 100), 3000)
+    settings["vad_cooldown_ms"] = min(max(settings["vad_cooldown_ms"], 0), 5000)
+    settings["vad_pre_buffer_ms"] = min(max(settings["vad_pre_buffer_ms"], 0), 2000)
     if settings["text_display_mode"] not in VALID_TEXT_DISPLAY_MODES:
         settings["text_display_mode"] = DEFAULT_SETTINGS["text_display_mode"]
     return settings

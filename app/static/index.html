@@ -147,6 +147,101 @@
                 </select>
               </label>
             </div>
+
+            <div class="section-title compact">
+              <h3>语音输入 VAD</h3>
+              <p>当前使用浏览器端音量能量检测，不是 FunASR/WebRTC VAD。</p>
+            </div>
+
+            <div class="field-grid three">
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">基础阈值</span>
+                  <span class="help-icon" tabindex="0" data-tip="麦克风 RMS 音量超过该值才可能开始录音；越高越不容易误触发。" aria-label="麦克风 RMS 音量超过该值才可能开始录音；越高越不容易误触发。">i</span>
+                </span>
+                <input name="vad_threshold" type="number" min="0.001" max="0.3" step="0.001" value="0.055" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">底噪倍率</span>
+                  <span class="help-icon" tabindex="0" data-tip="动态底噪乘以该倍率会参与阈值计算；越高越抗噪。" aria-label="动态底噪乘以该倍率会参与阈值计算；越高越抗噪。">i</span>
+                </span>
+                <input name="vad_noise_multiplier" type="number" min="1" max="10" step="0.1" value="3.2" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">底噪偏移</span>
+                  <span class="help-icon" tabindex="0" data-tip="动态底噪加上该偏移会参与阈值计算；环境声容易误触发时调高。" aria-label="动态底噪加上该偏移会参与阈值计算；环境声容易误触发时调高。">i</span>
+                </span>
+                <input name="vad_noise_offset" type="number" min="0" max="0.3" step="0.001" value="0.025" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">播放期阈值</span>
+                  <span class="help-icon" tabindex="0" data-tip="助手语音正在播放或刚调度播放时使用的更高阈值，用来避免外放声音被麦克风拾取后自我打断。" aria-label="助手语音正在播放或刚调度播放时使用的更高阈值，用来避免外放声音被麦克风拾取后自我打断。">i</span>
+                </span>
+                <input name="vad_assistant_threshold" type="number" min="0.001" max="0.5" step="0.001" value="0.095" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">播放期底噪倍率</span>
+                  <span class="help-icon" tabindex="0" data-tip="助手播放期间的动态底噪倍率；外放越容易被麦克风收到，这个值应越高。" aria-label="助手播放期间的动态底噪倍率；外放越容易被麦克风收到，这个值应越高。">i</span>
+                </span>
+                <input name="vad_assistant_noise_multiplier" type="number" min="1" max="15" step="0.1" value="5.2" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">播放期底噪偏移</span>
+                  <span class="help-icon" tabindex="0" data-tip="助手播放期间的底噪偏移；调高可以减少自我打断。" aria-label="助手播放期间的底噪偏移；调高可以减少自我打断。">i</span>
+                </span>
+                <input name="vad_assistant_noise_offset" type="number" min="0" max="0.5" step="0.001" value="0.052" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">连续命中帧</span>
+                  <span class="help-icon" tabindex="0" data-tip="连续多少帧超过阈值才确认开始录音；越高越稳，但打断更慢。" aria-label="连续多少帧超过阈值才确认开始录音；越高越稳，但打断更慢。">i</span>
+                </span>
+                <input name="vad_start_frames" type="number" min="1" max="30" step="1" value="6" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">静音结束 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="录音中连续静音多久后结束本句话。" aria-label="录音中连续静音多久后结束本句话。">i</span>
+                </span>
+                <input name="vad_silence_ms" type="number" min="200" max="5000" step="50" value="1000" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">最短语音 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="少于该时长的录音不会送 ASR，避免短促噪声。" aria-label="少于该时长的录音不会送 ASR，避免短促噪声。">i</span>
+                </span>
+                <input name="vad_min_speech_ms" type="number" min="100" max="3000" step="50" value="500" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">冷却时间 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="一次录音结束后多久内不再触发下一次录音。" aria-label="一次录音结束后多久内不再触发下一次录音。">i</span>
+                </span>
+                <input name="vad_cooldown_ms" type="number" min="0" max="5000" step="50" value="900" />
+              </label>
+
+              <label class="field">
+                <span class="field-head">
+                  <span class="field-name">预录缓冲 ms</span>
+                  <span class="help-icon" tabindex="0" data-tip="确认开始录音时，会把这段时长内的前置音频一起送 ASR，避免开头被吞。" aria-label="确认开始录音时，会把这段时长内的前置音频一起送 ASR，避免开头被吞。">i</span>
+                </span>
+                <input name="vad_pre_buffer_ms" type="number" min="0" max="2000" step="50" value="500" />
+              </label>
+            </div>
           </section>
 
           <section class="tab-panel" data-panel="gsv">

@@ -39,6 +39,9 @@ let vadSpeaking = false;
 let vadSilenceStartedAt = 0;
 let vadSpeechStartedAt = 0;
 let vadLastSubmitAt = 0;
+let vadPreChunks = [];
+let vadCaptureActive = false;
+let vadFinalizeTimer = null;
 let voiceInputSerial = 0;
 let asrBusy = false;
 let currentAsrController = null;
@@ -62,6 +65,8 @@ const VAD_START_FRAMES = 6;
 const VAD_SILENCE_MS = 1000;
 const VAD_MIN_SPEECH_MS = 500;
 const VAD_COOLDOWN_MS = 900;
+const VAD_PRE_BUFFER_MS = 500;
+const VAD_RECORDER_TIMESLICE_MS = 200;
 let vadNoiseFloor = 0.012;
 let vadVoiceHitFrames = 0;
 
@@ -75,6 +80,17 @@ const numericFields = new Set([
   "tts_min_segment_chars",
   "tts_soft_segment_chars",
   "tts_force_segment_chars",
+  "vad_threshold",
+  "vad_noise_multiplier",
+  "vad_noise_offset",
+  "vad_assistant_threshold",
+  "vad_assistant_noise_multiplier",
+  "vad_assistant_noise_offset",
+  "vad_start_frames",
+  "vad_silence_ms",
+  "vad_min_speech_ms",
+  "vad_cooldown_ms",
+  "vad_pre_buffer_ms",
 ]);
 const checkboxFields = new Set(["enable_gsv_tts"]);
 const defaultFormValues = {
@@ -82,6 +98,17 @@ const defaultFormValues = {
   tts_soft_segment_chars: 60,
   tts_force_segment_chars: 90,
   text_display_mode: "speech_sync",
+  vad_threshold: VAD_THRESHOLD,
+  vad_noise_multiplier: VAD_NOISE_MULTIPLIER,
+  vad_noise_offset: VAD_NOISE_OFFSET,
+  vad_assistant_threshold: VAD_ASSISTANT_THRESHOLD,
+  vad_assistant_noise_multiplier: VAD_ASSISTANT_NOISE_MULTIPLIER,
+  vad_assistant_noise_offset: VAD_ASSISTANT_NOISE_OFFSET,
+  vad_start_frames: VAD_START_FRAMES,
+  vad_silence_ms: VAD_SILENCE_MS,
+  vad_min_speech_ms: VAD_MIN_SPEECH_MS,
+  vad_cooldown_ms: VAD_COOLDOWN_MS,
+  vad_pre_buffer_ms: VAD_PRE_BUFFER_MS,
 };
 
 function setStatus(text) {
@@ -1014,15 +1041,24 @@ function voiceLevel() {
   return Math.sqrt(sum / vadData.length);
 }
 
+function settingNumber(key, fallback) {
+  const value = Number(settings[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function vadStartThreshold() {
   if (assistantPlaybackActive()) {
     return Math.max(
-      VAD_ASSISTANT_THRESHOLD,
-      vadNoiseFloor * VAD_ASSISTANT_NOISE_MULTIPLIER,
-      vadNoiseFloor + VAD_ASSISTANT_NOISE_OFFSET,
+      settingNumber("vad_assistant_threshold", VAD_ASSISTANT_THRESHOLD),
+      vadNoiseFloor * settingNumber("vad_assistant_noise_multiplier", VAD_ASSISTANT_NOISE_MULTIPLIER),
+      vadNoiseFloor + settingNumber("vad_assistant_noise_offset", VAD_ASSISTANT_NOISE_OFFSET),
     );
   }
-  return Math.max(VAD_THRESHOLD, vadNoiseFloor * VAD_NOISE_MULTIPLIER, vadNoiseFloor + VAD_NOISE_OFFSET);
+  return Math.max(
+    settingNumber("vad_threshold", VAD_THRESHOLD),
+    vadNoiseFloor * settingNumber("vad_noise_multiplier", VAD_NOISE_MULTIPLIER),
+    vadNoiseFloor + settingNumber("vad_noise_offset", VAD_NOISE_OFFSET),
+  );
 }
 
 function assistantPlaybackActive() {
@@ -1032,35 +1068,35 @@ function assistantPlaybackActive() {
 }
 
 function beginVoiceUtterance(now) {
-  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < VAD_COOLDOWN_MS) return;
+  if (!voiceMode || vadSpeaking || now - vadLastSubmitAt < settingNumber("vad_cooldown_ms", VAD_COOLDOWN_MS)) return;
   vadSpeaking = true;
   const utteranceSerial = voiceInputSerial + 1;
   voiceInputSerial = utteranceSerial;
   vadSpeechStartedAt = now;
   vadSilenceStartedAt = 0;
   vadVoiceHitFrames = 0;
-  chunks = [];
+  const preBufferMs = settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS);
+  chunks = vadPreChunks.filter((item) => now - item.at <= preBufferMs).map((item) => item.blob);
+  vadCaptureActive = true;
   updateVoiceDraft("", true);
   interruptAssistant("speech");
 
-  const mimeType = chooseMimeType();
-  recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-  recorder.onstop = async () => {
-    const elapsed = performance.now() - vadSpeechStartedAt;
-    const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-    if (voiceMode && elapsed >= VAD_MIN_SPEECH_MS && blob.size > 0) {
-      vadLastSubmitAt = performance.now();
-      await transcribeAndChat(blob, { autoVoice: true, voiceSerial: utteranceSerial });
-    } else if (voiceMode) {
-      setStatus("监听中");
-    }
-  };
-  recorder.start();
   recordButton.classList.add("recording");
   setStatus("正在听你说话");
+}
+
+async function finalizeVoiceUtterance() {
+  const elapsed = performance.now() - vadSpeechStartedAt;
+  const mimeType = recorder?.mimeType || "audio/webm";
+  const blob = new Blob(chunks, { type: mimeType });
+  vadCaptureActive = false;
+  chunks = [];
+  if (voiceMode && elapsed >= settingNumber("vad_min_speech_ms", VAD_MIN_SPEECH_MS) && blob.size > 0) {
+    vadLastSubmitAt = performance.now();
+    await transcribeAndChat(blob, { autoVoice: true, voiceSerial: voiceInputSerial });
+  } else if (voiceMode) {
+    setStatus("监听中");
+  }
 }
 
 function endVoiceUtterance() {
@@ -1070,8 +1106,17 @@ function endVoiceUtterance() {
   vadVoiceHitFrames = 0;
   recordButton.classList.remove("recording");
   if (recorder && recorder.state === "recording") {
-    recorder.stop();
+    try {
+      recorder.requestData();
+    } catch (error) {
+      // Some browsers may ignore requestData while a chunk is already pending.
+    }
   }
+  if (vadFinalizeTimer) window.clearTimeout(vadFinalizeTimer);
+  vadFinalizeTimer = window.setTimeout(() => {
+    vadFinalizeTimer = null;
+    finalizeVoiceUtterance();
+  }, 120);
 }
 
 function tickVoiceActivity() {
@@ -1088,12 +1133,12 @@ function tickVoiceActivity() {
     } else {
       vadVoiceHitFrames += 1;
     }
-    if (!vadSpeaking && vadVoiceHitFrames >= VAD_START_FRAMES) {
+    if (!vadSpeaking && vadVoiceHitFrames >= settingNumber("vad_start_frames", VAD_START_FRAMES)) {
       beginVoiceUtterance(now);
     }
   } else if (vadSpeaking) {
     if (!vadSilenceStartedAt) vadSilenceStartedAt = now;
-    if (now - vadSilenceStartedAt >= VAD_SILENCE_MS) {
+    if (now - vadSilenceStartedAt >= settingNumber("vad_silence_ms", VAD_SILENCE_MS)) {
       endVoiceUtterance();
     }
   } else {
@@ -1120,6 +1165,22 @@ async function startVoiceMode() {
   vadSilenceStartedAt = 0;
   vadVoiceHitFrames = 0;
   vadNoiseFloor = 0.012;
+  vadPreChunks = [];
+  vadCaptureActive = false;
+  chunks = [];
+  const mimeType = chooseMimeType();
+  recorder = new MediaRecorder(vadStream, mimeType ? { mimeType } : undefined);
+  recorder.ondataavailable = (event) => {
+    if (!event.data || event.data.size <= 0) return;
+    const item = { blob: event.data, at: performance.now() };
+    vadPreChunks.push(item);
+    const keepMs = settingNumber("vad_pre_buffer_ms", VAD_PRE_BUFFER_MS) + 1200;
+    vadPreChunks = vadPreChunks.filter((chunk) => item.at - chunk.at <= keepMs);
+    if (vadCaptureActive) {
+      chunks.push(event.data);
+    }
+  };
+  recorder.start(VAD_RECORDER_TIMESLICE_MS);
   recordButton.classList.add("listening");
   recordButton.title = "关闭连续语音输入";
   recordIcon.textContent = "●";
@@ -1138,7 +1199,12 @@ function stopVoiceMode() {
     vadFrameId = null;
   }
   if (recorder && recorder.state === "recording") {
+    vadCaptureActive = false;
     recorder.stop();
+  }
+  if (vadFinalizeTimer) {
+    window.clearTimeout(vadFinalizeTimer);
+    vadFinalizeTimer = null;
   }
   if (vadStream) {
     vadStream.getTracks().forEach((track) => track.stop());
@@ -1153,6 +1219,10 @@ function stopVoiceMode() {
   vadData = null;
   vadSpeaking = false;
   vadVoiceHitFrames = 0;
+  vadPreChunks = [];
+  chunks = [];
+  vadCaptureActive = false;
+  recorder = null;
   cancelCurrentAsr();
   recordButton.classList.remove("listening", "recording");
   recordButton.title = "开启连续语音输入";
