@@ -56,6 +56,7 @@ let currentChatRequestId = null;
 let currentChatInterrupted = false;
 let currentTypewriter = null;
 let activeChatId = 0;
+let activeChatRun = null;
 let voiceDraftBubble = null;
 let voiceDraftText = "";
 let pageCleanupDone = false;
@@ -482,7 +483,11 @@ function schedulePcmChunk(ctx, bytes, format) {
   return { frames: frameCount, startTime };
 }
 
-function createInlineAudioStream(audioId, text = "", onPlaybackStart = null) {
+function isActiveChatRun(chatRun) {
+  return !!chatRun && activeChatRun === chatRun && !chatRun.interrupted;
+}
+
+function createInlineAudioStream(audioId, text = "", onPlaybackStart = null, isActive = null) {
   inlineAudioStreams.set(audioId, {
     pending: new Uint8Array(0),
     format: null,
@@ -491,21 +496,25 @@ function createInlineAudioStream(audioId, text = "", onPlaybackStart = null) {
     receivedBytes: 0,
     text,
     onPlaybackStart,
+    isActive,
     textRevealed: false,
   });
 }
 
 function revealInlineTextAtPlayback(ctx, state, startTime) {
   if (!state.text || !state.onPlaybackStart || state.textRevealed) return;
+  if (state.isActive && !state.isActive()) return;
   state.textRevealed = true;
   const delayMs = Math.max(0, startTime - ctx.currentTime) * 1000;
   window.setTimeout(() => {
+    if (state.isActive && !state.isActive()) return;
     state.onPlaybackStart(state.text);
   }, delayMs);
 }
 
-async function pushInlineAudioChunk(audioId, audioBase64) {
+async function pushInlineAudioChunk(audioId, audioBase64, chatRun = null) {
   const ctx = await ensureAudioContext();
+  if (chatRun && !isActiveChatRun(chatRun)) return;
   let state = inlineAudioStreams.get(audioId);
   if (!state) {
     state = {
@@ -516,6 +525,7 @@ async function pushInlineAudioChunk(audioId, audioBase64) {
       receivedBytes: 0,
       text: "",
       onPlaybackStart: null,
+      isActive: chatRun ? () => isActiveChatRun(chatRun) : null,
       textRevealed: false,
     };
     inlineAudioStreams.set(audioId, state);
@@ -536,14 +546,20 @@ async function pushInlineAudioChunk(audioId, audioBase64) {
     setStatus(`语音流已连接 ${parsed.sampleRate}Hz`);
   }
 
+  if (chatRun && !isActiveChatRun(chatRun)) return;
   const frames = drainInlineAudioState(ctx, state, false);
   if (frames > 0) setStatus("语音播放中");
 }
 
-async function finishInlineAudioStream(audioId) {
+async function finishInlineAudioStream(audioId, chatRun = null) {
   const ctx = await ensureAudioContext();
+  if (chatRun && !isActiveChatRun(chatRun)) return;
   const state = inlineAudioStreams.get(audioId);
   if (state) {
+    if (state.isActive && !state.isActive()) {
+      inlineAudioStreams.delete(audioId);
+      return;
+    }
     const frames = drainInlineAudioState(ctx, state, true);
     if (frames > 0) setStatus("语音播放中");
     if (state.scheduledFrames === 0) {
@@ -675,16 +691,21 @@ function stopAudioPlayback() {
 }
 
 function interruptAssistant(reason = "interrupted") {
+  const chatRun = activeChatRun;
+  if (chatRun) chatRun.interrupted = true;
   currentChatInterrupted = true;
   activeChatId += 1;
-  cancelCurrentChat();
+  cancelCurrentChat(chatRun);
   cancelCurrentAsr();
-  if (currentChatController) {
+  if (chatRun?.controller) {
+    chatRun.controller.abort();
+  } else if (currentChatController) {
     currentChatController.abort();
   }
   if (currentTypewriter) {
     currentTypewriter.cancel();
   }
+  if (activeChatRun === chatRun) activeChatRun = null;
   currentChatController = null;
   currentTypewriter = null;
   stopAudioPlayback();
@@ -699,10 +720,12 @@ function makeChatRequestId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function cancelCurrentChat() {
-  if (!currentChatRequestId) return;
-  sendCancelRequest(`/api/chat/cancel/${encodeURIComponent(currentChatRequestId)}`);
-  currentChatRequestId = null;
+function cancelCurrentChat(chatRun = activeChatRun) {
+  const requestId = chatRun?.requestId || currentChatRequestId;
+  if (!requestId) return;
+  sendCancelRequest(`/api/chat/cancel/${encodeURIComponent(requestId)}`);
+  if (chatRun) chatRun.requestId = null;
+  if (currentChatRequestId === requestId) currentChatRequestId = null;
 }
 
 function makeAsrRequestId() {
@@ -741,18 +764,23 @@ function sendCancelRequest(url) {
 function cleanupPageRequests() {
   if (pageCleanupDone) return;
   pageCleanupDone = true;
+  const chatRun = activeChatRun;
+  if (chatRun) chatRun.interrupted = true;
   currentChatInterrupted = true;
   activeChatId += 1;
-  cancelCurrentChat();
+  cancelCurrentChat(chatRun);
   cancelCurrentAsr();
-  if (currentChatController) {
+  if (chatRun?.controller) {
+    chatRun.controller.abort();
+  } else if (currentChatController) {
     currentChatController.abort();
-    currentChatController = null;
   }
+  currentChatController = null;
   if (currentAsrController) {
     currentAsrController.abort();
     currentAsrController = null;
   }
+  if (activeChatRun === chatRun) activeChatRun = null;
   if (currentTypewriter) {
     currentTypewriter.cancel();
     currentTypewriter = null;
@@ -904,6 +932,13 @@ async function runChat(userText, options = {}) {
   const chatRequestId = makeChatRequestId();
   currentChatRequestId = chatRequestId;
   currentChatController = new AbortController();
+  const chatRun = {
+    chatId,
+    requestId: chatRequestId,
+    controller: currentChatController,
+    interrupted: false,
+  };
+  activeChatRun = chatRun;
   let assistantBubble = null;
   let typewriter = null;
   let assistantText = "";
@@ -939,7 +974,7 @@ async function runChat(userText, options = {}) {
 
     const revealAssistantText = (delta) => {
       if (!delta) return;
-      if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) return;
+      if (!isActiveChatRun(chatRun)) return;
       if (!speechSyncText) assistantText += delta;
       typewriter.push(delta);
     };
@@ -948,7 +983,7 @@ async function runChat(userText, options = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, history, speak: enableSpeech, chat_id: chatRequestId }),
-      signal: currentChatController.signal,
+      signal: chatRun.controller.signal,
     });
     if (!response.ok || !response.body) {
       const payload = await response.text();
@@ -960,13 +995,13 @@ async function runChat(userText, options = {}) {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) break;
+      if (!isActiveChatRun(chatRun)) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (!line.trim()) continue;
-        if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) break;
+        if (!isActiveChatRun(chatRun)) break;
         const event = JSON.parse(line);
         if (event.event === "text_delta") {
           revealAssistantText(event.delta || "");
@@ -975,12 +1010,13 @@ async function runChat(userText, options = {}) {
             event.audio_id,
             event.text || "",
             speechSyncText ? revealAssistantText : null,
+            () => isActiveChatRun(chatRun),
           );
           setStatus("语音合成中");
         } else if (event.event === "audio_chunk") {
-          await pushInlineAudioChunk(event.audio_id, event.audio_base64);
+          await pushInlineAudioChunk(event.audio_id, event.audio_base64, chatRun);
         } else if (event.event === "audio_end") {
-          await finishInlineAudioStream(event.audio_id);
+          await finishInlineAudioStream(event.audio_id, chatRun);
         } else if (event.event === "audio_stream") {
           enqueueAudio(event.audio_url);
           setStatus("语音播放中");
@@ -1006,7 +1042,7 @@ async function runChat(userText, options = {}) {
       }
     }
 
-    if (currentChatInterrupted || chatId !== activeChatId || chatRequestId !== currentChatRequestId) {
+    if (!isActiveChatRun(chatRun)) {
       return;
     }
 
@@ -1022,7 +1058,7 @@ async function runChat(userText, options = {}) {
     setStatus(audioStillPlaying || audioPlaying || audioQueue.length > 0 ? "语音播放中" : voiceMode ? "监听中" : "完成");
     if (audioStillPlaying) markCompleteAfterInlineAudio();
   } catch (error) {
-    if (currentChatInterrupted || error.name === "AbortError") {
+    if (chatRun.interrupted || error.name === "AbortError") {
       setStatus(voiceMode ? "监听中" : "已打断");
       return;
     }
@@ -1036,12 +1072,13 @@ async function runChat(userText, options = {}) {
     }
     setStatus("出错");
   } finally {
-    if (chatId === activeChatId) {
+    if (activeChatRun === chatRun) {
       busy = false;
       currentChatController = null;
       if (currentChatRequestId === chatRequestId) currentChatRequestId = null;
       currentTypewriter = null;
       currentChatInterrupted = false;
+      activeChatRun = null;
     }
   }
 }
