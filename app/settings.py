@@ -57,6 +57,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "vad_web_redemption_ms": 1000,
     "vad_web_pre_speech_pad_ms": 500,
     "vad_web_min_speech_ms": 500,
+    "auto_preload_vad": False,
+    "auto_preload_asr": False,
 }
 
 _settings_lock = threading.Lock()

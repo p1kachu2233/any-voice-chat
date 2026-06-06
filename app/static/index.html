@@ -20,6 +20,7 @@
               <span class="speech-toggle-ui" aria-hidden="true"></span>
               <span class="speech-toggle-text">语音</span>
             </label>
+            <button class="admin-link" type="button" id="preloadVoice">预加载</button>
             <a class="admin-link" href="/admin" target="_blank" rel="noreferrer">后台</a>
             <div class="status" id="statusText">待机</div>
           </div>
@@ -154,6 +155,22 @@
             </div>
 
             <div class="field-grid three">
+              <label class="field check-field">
+                <span class="check-row">
+                  <input name="auto_preload_vad" type="checkbox" />
+                  <span>打开聊天页后预加载 VAD</span>
+                  <span class="help-icon" tabindex="0" data-tip="仅对聊天页当前浏览器上下文有效；会提前加载 vad-web 的 ONNX/WASM，但不会打开麦克风。" aria-label="仅对聊天页当前浏览器上下文有效；会提前加载 vad-web 的 ONNX/WASM，但不会打开麦克风。">i</span>
+                </span>
+              </label>
+
+              <label class="field check-field">
+                <span class="check-row">
+                  <input name="auto_preload_asr" type="checkbox" />
+                  <span>打开聊天页后预加载 ASR</span>
+                  <span class="help-icon" tabindex="0" data-tip="会让后端提前加载 FunASR 模型，第一次语音识别会更快，但会提前占用内存/显存。" aria-label="会让后端提前加载 FunASR 模型，第一次语音识别会更快，但会提前占用内存/显存。">i</span>
+                </span>
+              </label>
+
               <label class="field">
                 <span class="field-head">
                   <span class="field-name">VAD 引擎</span>

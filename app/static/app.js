@@ -7,6 +7,7 @@ const recordButton = document.querySelector("#recordButton");
 const recordIcon = document.querySelector("#recordIcon");
 const replyAudio = document.querySelector("#replyAudio");
 const speechToggle = document.querySelector("#speechToggle");
+const preloadVoiceButton = document.querySelector("#preloadVoice");
 const gsvStatus = document.querySelector("#gsvStatus");
 const helpTooltip = document.createElement("div");
 helpTooltip.className = "help-tooltip";
@@ -36,6 +37,7 @@ let vadAnalyser = null;
 let vadData = null;
 let vadFrameId = null;
 let micVad = null;
+let micVadConfigKey = "";
 let rmsSource = null;
 let vadSpeaking = false;
 let vadSilenceStartedAt = 0;
@@ -100,7 +102,7 @@ const numericFields = new Set([
   "vad_web_pre_speech_pad_ms",
   "vad_web_min_speech_ms",
 ]);
-const checkboxFields = new Set(["enable_gsv_tts"]);
+const checkboxFields = new Set(["enable_gsv_tts", "auto_preload_vad", "auto_preload_asr"]);
 const defaultFormValues = {
   tts_min_segment_chars: 10,
   tts_soft_segment_chars: 60,
@@ -123,6 +125,8 @@ const defaultFormValues = {
   vad_web_redemption_ms: 1000,
   vad_web_pre_speech_pad_ms: 500,
   vad_web_min_speech_ms: 500,
+  auto_preload_vad: false,
+  auto_preload_asr: false,
 };
 
 function setStatus(text) {
@@ -790,6 +794,15 @@ function updateVadEnginePanels() {
   });
 }
 
+function runAutoPreload() {
+  if (isSettingsOnly) return;
+  if (settings.auto_preload_vad || settings.auto_preload_asr) {
+    window.setTimeout(() => {
+      preloadVoiceAssets({ vad: settings.auto_preload_vad, asr: settings.auto_preload_asr, announce: false });
+    }, 300);
+  }
+}
+
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
   const contentType = response.headers.get("content-type") || "";
@@ -812,6 +825,7 @@ async function loadSettings() {
   fillForm(settings);
   syncSpeechToggle();
   showEmpty();
+  runAutoPreload();
 }
 
 async function saveSettings(announce = true) {
@@ -1263,6 +1277,9 @@ async function startVoiceMode() {
       return;
     } catch (error) {
       console.warn("vad-web failed, falling back to RMS VAD", error);
+      voiceMode = false;
+      vadSpeaking = false;
+      vadCaptureActive = false;
       setStatus(`vad-web 启动失败，已切换 RMS：${error.message}`);
       window.setTimeout(() => startRmsVoiceMode().catch((fallbackError) => setStatus(`语音启动失败：${fallbackError.message}`)), 200);
       return;
@@ -1271,15 +1288,29 @@ async function startVoiceMode() {
   await startRmsVoiceMode();
 }
 
-async function startVadWebVoiceMode() {
-  voiceMode = true;
-  vadSpeaking = false;
-  vadSilenceStartedAt = 0;
-  vadVoiceHitFrames = 0;
-  vadCaptureActive = false;
-  chunks = [];
-  setStatus("正在加载 vad-web");
-  micVad = await window.vad.MicVAD.new({
+function vadWebConfigKey() {
+  return JSON.stringify({
+    positive: settingNumber("vad_web_positive_threshold", 0.5),
+    negative: settingNumber("vad_web_negative_threshold", 0.35),
+    redemption: settingNumber("vad_web_redemption_ms", 1000),
+    preSpeechPad: settingNumber("vad_web_pre_speech_pad_ms", VAD_PRE_BUFFER_MS),
+    minSpeech: settingNumber("vad_web_min_speech_ms", VAD_MIN_SPEECH_MS),
+  });
+}
+
+function destroyPreloadedVad() {
+  if (!micVad) return;
+  try {
+    micVad.destroy();
+  } catch (error) {
+    // Ignore shutdown errors from the browser audio graph.
+  }
+  micVad = null;
+  micVadConfigKey = "";
+}
+
+async function createMicVad() {
+  return window.vad.MicVAD.new({
     model: "v5",
     baseAssetPath: "/static/vendor/vad-web/",
     onnxWASMBasePath: "/static/vendor/onnxruntime-web/",
@@ -1310,6 +1341,68 @@ async function startVadWebVoiceMode() {
       ort.env.logLevel = "error";
     },
   });
+}
+
+async function preloadVadWeb(options = {}) {
+  const announce = options.announce !== false;
+  settings = await requestJson("/api/settings").catch(() => settings);
+  if ((settings.vad_engine || "vad_web") !== "vad_web") {
+    if (announce) setStatus("当前 VAD 引擎不是 vad-web");
+    return false;
+  }
+  if (!window.vad?.MicVAD) {
+    throw new Error("vad-web 静态资源未加载");
+  }
+  const configKey = vadWebConfigKey();
+  if (micVad && micVadConfigKey === configKey) {
+    if (announce) setStatus("VAD 已预加载");
+    return true;
+  }
+  destroyPreloadedVad();
+  if (announce) setStatus("正在预加载 VAD");
+  micVad = await createMicVad();
+  micVadConfigKey = configKey;
+  if (announce) setStatus("VAD 已预加载");
+  return true;
+}
+
+async function preloadAsr(options = {}) {
+  const announce = options.announce !== false;
+  if (announce) setStatus("正在预加载 ASR");
+  await requestJson(`/api/asr/warmup?language=${encodeURIComponent(form.elements.asr_language.value || "zh")}`, {
+    method: "POST",
+  });
+  if (announce) setStatus("ASR 已预加载");
+}
+
+async function preloadVoiceAssets(options = {}) {
+  const preloadVad = options.vad !== false;
+  const preloadAsrModel = options.asr !== false;
+  const announce = options.announce !== false;
+  try {
+    if (announce) setStatus("正在预加载");
+    const tasks = [];
+    if (preloadVad) tasks.push(preloadVadWeb({ announce: false }));
+    if (preloadAsrModel) tasks.push(preloadAsr({ announce: false }));
+    await Promise.all(tasks);
+    if (announce) setStatus("预加载完成");
+  } catch (error) {
+    setStatus(`预加载失败：${error.message}`);
+  }
+}
+
+async function startVadWebVoiceMode() {
+  voiceMode = true;
+  vadSpeaking = false;
+  vadSilenceStartedAt = 0;
+  vadVoiceHitFrames = 0;
+  vadCaptureActive = false;
+  chunks = [];
+  setStatus("正在加载 vad-web");
+  await preloadVadWeb({ announce: false });
+  if (!micVad) {
+    throw new Error("VAD 未加载");
+  }
   await micVad.start();
   recordButton.classList.add("listening");
   recordButton.title = "关闭连续语音输入";
@@ -1359,12 +1452,7 @@ function stopVoiceMode() {
     vadFrameId = null;
   }
   if (micVad) {
-    try {
-      micVad.destroy();
-    } catch (error) {
-      // Ignore shutdown errors from the browser audio graph.
-    }
-    micVad = null;
+    micVad.pause().catch(() => {});
   }
   if (recorder && recorder.state === "recording") {
     vadCaptureActive = false;
@@ -1477,6 +1565,12 @@ if (form.elements.vad_engine) {
   form.elements.vad_engine.addEventListener("change", updateVadEnginePanels);
 }
 
+if (preloadVoiceButton) {
+  preloadVoiceButton.addEventListener("click", () => {
+    preloadVoiceAssets({ vad: true, asr: true, announce: true });
+  });
+}
+
 if (speechToggle) {
   speechToggle.addEventListener("change", async () => {
     const wantsSpeech = speechToggle.checked;
@@ -1541,8 +1635,8 @@ chatForm.addEventListener("submit", (event) => {
 });
 
 recordButton.addEventListener("click", () => {
-  if (!navigator.mediaDevices || !window.MediaRecorder) {
-    setStatus("浏览器不支持录音");
+  if (!navigator.mediaDevices) {
+    setStatus("浏览器不支持麦克风");
     return;
   }
   if (recorder && recorder.state === "recording") {

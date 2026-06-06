@@ -89,6 +89,8 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 
 连续监听开启时，助手自己的外放语音可能被麦克风拾取；前端在检测到助手音频正在播放或刚刚调度播放时，必须提高开始录音/打断阈值，避免助手声音把自己的下一轮回复取消掉。新一轮回复开始前也要清理上一轮未播放的音频调度状态。
 
+VAD 和 ASR 支持预加载。`vad-web` 预加载发生在浏览器当前页面上下文，只提前加载 ONNX/WASM 和初始化 MicVAD，不打开麦克风；在后台 iframe 里预加载 VAD 对聊天页没有帮助。FunASR 预加载通过后端 `/api/asr/warmup` 加载模型，对所有页面共享。自动预加载开关默认关闭，避免用户打开页面就占用内存/显存。
+
 ASR 默认使用 GPT-SoVITS `tools/asr` 下的 FunASR 模型，并在本应用进程内常驻复用模型；`/api/asr` 不应把上传音频保存成 wav 文件再识别，应尽量在内存中解码音频并送入 FunASR。前端每次 ASR 请求带 `asr_id`，新语音或打断时要同时 abort 前端请求并调用后端取消接口。FunASR `model.generate()` 是同步推理，已进入推理后的请求只能忽略结果，不能假装可以像 HTTP response 一样硬关闭。
 
 打断助手回复时，前端不能只调用 `AbortController.abort()` 关闭浏览器到本地后端的连接；必须同时调用后端取消接口。后端按 `chat_id` 持有当前 OpenAI 上游 response 和多个 GSV TTS response，取消时必须显式 `close()` 所有活跃上游连接，并用取消标记阻止未开始的 GSV 分段继续执行。`busy` 只表示前端当前页面正在跑一条助手回复流水线；后端可以在同一个 `chat_id` 下用 OpenAI producer 和 GSV worker 并行处理。
