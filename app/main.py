@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import queue
 import re
 import threading
 import time
@@ -32,9 +33,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _tts_stream_lock = threading.Lock()
 _tts_streams: dict[str, dict[str, Any]] = {}
-_chat_cancel_lock = threading.RLock()
+_chat_run_lock = threading.Lock()
+_chat_runs: dict[str, "ChatRun"] = {}
 _cancelled_chat_ids: dict[str, float] = {}
-_active_chat_resources: dict[str, list[Any]] = {}
 
 
 class SettingsPayload(BaseModel):
@@ -102,7 +103,52 @@ def _register_tts_stream(settings: dict[str, Any], text: str) -> str:
     return f"/api/tts/stream/{stream_id}"
 
 
-def _cleanup_cancelled_chats() -> None:
+class ChatRun:
+    def __init__(self, chat_id: str):
+        self.chat_id = chat_id
+        self.cancelled = False
+        self.lock = threading.Lock()
+        self.resources: list[Any] = []
+
+    def cancel(self) -> None:
+        with self.lock:
+            self.cancelled = True
+            resources = list(self.resources)
+            self.resources.clear()
+        for resource in resources:
+            try:
+                resource.close()
+            except Exception:
+                pass
+
+    def is_cancelled(self) -> bool:
+        with self.lock:
+            return self.cancelled
+
+    def track(self, resource: Any) -> bool:
+        with self.lock:
+            if self.cancelled:
+                should_close = True
+            else:
+                self.resources.append(resource)
+                should_close = False
+        if should_close:
+            try:
+                resource.close()
+            except Exception:
+                pass
+            return False
+        return True
+
+    def untrack(self, resource: Any) -> None:
+        with self.lock:
+            try:
+                self.resources.remove(resource)
+            except ValueError:
+                pass
+
+
+def _cleanup_cancelled_chat_ids() -> None:
     now = time.time()
     expired = [
         chat_id
@@ -113,74 +159,40 @@ def _cleanup_cancelled_chats() -> None:
         _cancelled_chat_ids.pop(chat_id, None)
 
 
-def _cancel_chat(chat_id: str) -> None:
-    resources: list[Any] = []
-    with _chat_cancel_lock:
-        _cleanup_cancelled_chats()
-        _cancelled_chat_ids[chat_id] = time.time()
-        resources = _active_chat_resources.pop(chat_id, [])
-    for resource in resources:
-        try:
-            resource.close()
-        except Exception:
-            pass
+def _register_chat_run(chat_id: str) -> ChatRun:
+    run = ChatRun(chat_id)
+    with _chat_run_lock:
+        _cleanup_cancelled_chat_ids()
+        if chat_id in _cancelled_chat_ids:
+            run.cancel()
+        _chat_runs[chat_id] = run
+    return run
 
 
-def _is_chat_cancelled(chat_id: Optional[str]) -> bool:
-    if not chat_id:
-        return False
-    with _chat_cancel_lock:
-        _cleanup_cancelled_chats()
-        return chat_id in _cancelled_chat_ids
-
-
-def _finish_chat(chat_id: Optional[str]) -> None:
-    if not chat_id:
-        return
-    with _chat_cancel_lock:
+def _finish_chat_run(chat_id: str, run: ChatRun) -> None:
+    run.cancel()
+    with _chat_run_lock:
+        if _chat_runs.get(chat_id) is run:
+            _chat_runs.pop(chat_id, None)
         _cancelled_chat_ids.pop(chat_id, None)
-        _active_chat_resources.pop(chat_id, None)
 
 
-def _track_chat_resource(chat_id: Optional[str], resource: Any) -> bool:
-    if not chat_id:
+def _cancel_chat_run(chat_id: str) -> bool:
+    with _chat_run_lock:
+        _cleanup_cancelled_chat_ids()
+        _cancelled_chat_ids[chat_id] = time.time()
+        run = _chat_runs.get(chat_id)
+    if run:
+        run.cancel()
         return True
-    with _chat_cancel_lock:
-        if _is_chat_cancelled(chat_id):
-            should_close = True
-        else:
-            _active_chat_resources.setdefault(chat_id, []).append(resource)
-            should_close = False
-    if should_close:
-        try:
-            resource.close()
-        except Exception:
-            pass
-        return False
-    return True
-
-
-def _untrack_chat_resource(chat_id: Optional[str], resource: Any) -> None:
-    if not chat_id:
-        return
-    with _chat_cancel_lock:
-        resources = _active_chat_resources.get(chat_id)
-        if not resources:
-            return
-        try:
-            resources.remove(resource)
-        except ValueError:
-            return
-        if not resources:
-            _active_chat_resources.pop(chat_id, None)
+    return False
 
 
 def _iter_tts_stream_events(
     settings: dict[str, Any],
     segment: str,
     reveal_text: bool = False,
-    stop_check=None,
-    chat_id: Optional[str] = None,
+    run: Optional[ChatRun] = None,
 ):
     audio_id = uuid.uuid4().hex
     tts_segment = segment.strip()
@@ -188,7 +200,7 @@ def _iter_tts_stream_events(
         if reveal_text:
             yield _stream_event("text_delta", {"delta": segment})
         return
-    if stop_check and stop_check():
+    if run and run.is_cancelled():
         return
     try:
         audio = stream_synthesize(settings, tts_segment)
@@ -198,18 +210,18 @@ def _iter_tts_stream_events(
             yield _stream_event("text_delta", {"delta": segment})
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
         return
-    if not _track_chat_resource(chat_id, audio.response):
+    if run and not run.track(audio.response):
         return
 
     if reveal_text:
         yield _stream_event("text_delta", {"delta": segment})
-    if stop_check and stop_check():
+    if run and run.is_cancelled():
         audio.response.close()
         return
     yield _stream_event("audio_start", {"audio_id": audio_id, "text": segment, "media_type": "wav"})
     try:
         for chunk in audio.response.iter_content(chunk_size=8192):
-            if stop_check and stop_check():
+            if run and run.is_cancelled():
                 return
             if chunk:
                 yield _stream_event(
@@ -220,11 +232,16 @@ def _iter_tts_stream_events(
                     },
                 )
     except Exception as exc:
+        if run and run.is_cancelled():
+            return
         log_exception("tts.stream.read", exc)
         yield _stream_event("audio_error", {"audio_id": audio_id, "text": segment, "message": str(exc)})
     finally:
-        _untrack_chat_resource(chat_id, audio.response)
+        if run:
+            run.untrack(audio.response)
         audio.response.close()
+    if run and run.is_cancelled():
+        return
     yield _stream_event("audio_end", {"audio_id": audio_id})
 
 
@@ -385,8 +402,8 @@ def cancel_chat(chat_id: str):
     chat_id = chat_id.strip()
     if not chat_id:
         raise HTTPException(status_code=400, detail="chat_id 不能为空")
-    _cancel_chat(chat_id)
-    return {"ok": True, "chat_id": chat_id}
+    active = _cancel_chat_run(chat_id)
+    return {"ok": True, "chat_id": chat_id, "active": active}
 
 
 @app.post("/api/chat/stream")
@@ -396,10 +413,18 @@ def chat_stream(payload: ChatPayload):
     if not user_text:
         raise HTTPException(status_code=400, detail="消息不能为空")
     chat_id = (payload.chat_id or uuid.uuid4().hex).strip()
+    run = _register_chat_run(chat_id)
 
     def generate():
-        assistant_text = ""
-        tts_buffer = ""
+        assistant_parts: list[str] = []
+        assistant_lock = threading.Lock()
+        event_queue: queue.Queue[Any] = queue.Queue()
+        tts_queue: queue.Queue[Any] = queue.Queue()
+        done_marker = object()
+        tts_done_marker = object()
+        completed_openai = False
+        had_error = False
+        openai_response = None
         speak_enabled = payload.speak and settings.get("enable_gsv_tts", True)
         text_display_mode = settings.get("text_display_mode") or "speech_sync"
         reveal_text_immediately = (not speak_enabled) or text_display_mode == "text_first"
@@ -407,98 +432,147 @@ def chat_stream(payload: ChatPayload):
         soft_segment_chars = int(settings.get("tts_soft_segment_chars") or 0)
         force_segment_chars = int(settings.get("tts_force_segment_chars") or 0)
 
-        def cancelled():
-            return _is_chat_cancelled(chat_id)
+        def assistant_text():
+            with assistant_lock:
+                return "".join(assistant_parts)
 
-        openai_response = None
+        def put_event(event: str, data: dict[str, Any]) -> None:
+            if not run.is_cancelled():
+                event_queue.put(_stream_event(event, data))
 
         def track_openai_response(response):
             nonlocal openai_response
             if response is None:
                 if openai_response is not None:
-                    _untrack_chat_resource(chat_id, openai_response)
+                    run.untrack(openai_response)
                     openai_response = None
                 return
             openai_response = response
-            _track_chat_resource(chat_id, response)
+            run.track(response)
 
-        if cancelled():
-            _finish_chat(chat_id)
-            return
-
-        if speak_enabled:
-            gsv_health = check_gsv_api(settings)
-            if not gsv_health.get("ok"):
-                yield _stream_event(
-                    "error",
-                    {
-                        "message": f"已启用 GSV 语音合成，但 GSV 未连接：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
-                    },
-                )
-                return
-
-        yield _stream_event("start", {"user_text": user_text})
-        try:
-            for delta in stream_chat_completion(
-                settings,
-                user_text,
-                payload.history,
-                stop_check=cancelled,
-                response_hook=track_openai_response,
-            ):
-                if cancelled():
-                    return
-                assistant_text += delta
-                tts_buffer += delta
-                if reveal_text_immediately:
-                    yield _stream_event("text_delta", {"delta": delta})
-
-                while True:
-                    if cancelled():
+        def producer() -> None:
+            nonlocal completed_openai, had_error
+            tts_buffer = ""
+            try:
+                if speak_enabled:
+                    gsv_health = check_gsv_api(settings)
+                    if not gsv_health.get("ok"):
+                        put_event(
+                            "error",
+                            {
+                                "message": f"已启用 GSV 语音合成，但 GSV 未连接：{gsv_health.get('error') or gsv_health.get('message') or gsv_health.get('status_code') or '未知状态'}",
+                            },
+                        )
+                        had_error = True
                         return
+
+                put_event("start", {"user_text": user_text})
+                for delta in stream_chat_completion(
+                    settings,
+                    user_text,
+                    payload.history,
+                    stop_check=run.is_cancelled,
+                    response_hook=track_openai_response,
+                ):
+                    if run.is_cancelled():
+                        return
+                    with assistant_lock:
+                        assistant_parts.append(delta)
+                    tts_buffer += delta
+                    if reveal_text_immediately:
+                        put_event("text_delta", {"delta": delta})
+
+                    while not run.is_cancelled():
+                        segment, tts_buffer = _pop_tts_segment(
+                            tts_buffer,
+                            min_chars=min_segment_chars,
+                            soft_chars=soft_segment_chars,
+                            force_chars=force_segment_chars,
+                        )
+                        if segment is None:
+                            break
+                        if speak_enabled:
+                            tts_queue.put(segment)
+                        elif not reveal_text_immediately:
+                            put_event("text_delta", {"delta": segment})
+
+                while not run.is_cancelled():
                     segment, tts_buffer = _pop_tts_segment(
                         tts_buffer,
                         min_chars=min_segment_chars,
                         soft_chars=soft_segment_chars,
                         force_chars=force_segment_chars,
+                        final=True,
                     )
                     if segment is None:
                         break
                     if speak_enabled:
-                        if _has_speakable_text(segment):
-                            yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled, chat_id=chat_id)
-                        elif not reveal_text_immediately:
-                            yield _stream_event("text_delta", {"delta": segment})
-
-            while True:
-                if cancelled():
-                    return
-                segment, tts_buffer = _pop_tts_segment(
-                    tts_buffer,
-                    min_chars=min_segment_chars,
-                    soft_chars=soft_segment_chars,
-                    force_chars=force_segment_chars,
-                    final=True,
-                )
-                if segment is None:
-                    break
-                if speak_enabled:
-                    if _has_speakable_text(segment):
-                        yield from _iter_tts_stream_events(settings, segment, stop_check=cancelled, chat_id=chat_id)
+                        tts_queue.put(segment)
                     elif not reveal_text_immediately:
-                        yield _stream_event("text_delta", {"delta": segment})
-                if not tts_buffer:
-                    break
+                        put_event("text_delta", {"delta": segment})
+                    if not tts_buffer:
+                        break
 
-            if not cancelled():
-                yield _stream_event("done", {"assistant_text": assistant_text})
-        except Exception as exc:
-            if cancelled():
-                return
-            log_exception("chat.stream", exc)
-            yield _stream_event("error", {"message": str(exc)})
+                completed_openai = not run.is_cancelled()
+            except Exception as exc:
+                if run.is_cancelled():
+                    return
+                had_error = True
+                log_exception("chat.stream", exc)
+                put_event("error", {"message": str(exc)})
+            finally:
+                if speak_enabled:
+                    tts_queue.put(tts_done_marker)
+                elif completed_openai and not had_error and not run.is_cancelled():
+                    put_event("done", {"assistant_text": assistant_text()})
+                    event_queue.put(done_marker)
+                elif not speak_enabled:
+                    event_queue.put(done_marker)
+
+        def tts_worker() -> None:
+            nonlocal had_error
+            try:
+                while not run.is_cancelled():
+                    segment = tts_queue.get()
+                    if segment is tts_done_marker:
+                        break
+                    if _has_speakable_text(segment):
+                        for event in _iter_tts_stream_events(settings, segment, run=run):
+                            if run.is_cancelled():
+                                break
+                            event_queue.put(event)
+                    elif not reveal_text_immediately:
+                        put_event("text_delta", {"delta": segment})
+            except Exception as exc:
+                if not run.is_cancelled():
+                    had_error = True
+                    log_exception("chat.tts.worker", exc)
+                    put_event("error", {"message": str(exc)})
+            finally:
+                if completed_openai and not had_error and not run.is_cancelled():
+                    put_event("done", {"assistant_text": assistant_text()})
+                event_queue.put(done_marker)
+
+        producer_thread = threading.Thread(target=producer, name=f"chat-openai-{chat_id[:8]}", daemon=True)
+        tts_thread = None
+        if speak_enabled:
+            tts_thread = threading.Thread(target=tts_worker, name=f"chat-tts-{chat_id[:8]}", daemon=True)
+            tts_thread.start()
+        producer_thread.start()
+
+        try:
+            while True:
+                item = event_queue.get()
+                if item is done_marker:
+                    break
+                if run.is_cancelled():
+                    break
+                yield item
         finally:
-            _finish_chat(chat_id)
+            _finish_chat_run(chat_id, run)
+            producer_thread.join(timeout=1)
+            if tts_thread:
+                tts_thread.join(timeout=1)
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 

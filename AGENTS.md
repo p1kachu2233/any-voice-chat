@@ -87,7 +87,7 @@ GSV 语音合成通过 GPT-SoVITS 的 `api_v2.py` 提供。默认由网页右侧
 
 聊天页录音按钮用于开启/关闭连续语音输入。连续语音输入由前端浏览器常驻麦克风监听和 VAD 音量检测实现：检测到用户开口时立刻打断当前 OpenAI 流、TTS 合成和 Web Audio 播放；支持 Web Speech API 的浏览器可先显示实时临时字幕；检测到句尾静音后，将该段录音发送到现有 `/api/asr`，用最终 ASR 文本覆盖草稿气泡，再自动进入 `/api/chat/stream`。不要把 ASR 改成后端常驻阻塞进程，除非用户明确要求。
 
-打断助手回复时，前端不能只调用 `AbortController.abort()` 关闭浏览器到后端的连接；必须同时调用后端取消接口，让 `/api/chat/stream` 对应的 OpenAI 上游流和 GSV TTS 流都能检查取消标记并尽快停止。
+打断助手回复时，前端不能只调用 `AbortController.abort()` 关闭浏览器到本地后端的连接；必须同时调用后端取消接口。后端按 `chat_id` 持有当前 OpenAI 上游 response 和多个 GSV TTS response，取消时必须显式 `close()` 所有活跃上游连接，并用取消标记阻止未开始的 GSV 分段继续执行。`busy` 只表示前端当前页面正在跑一条助手回复流水线；后端可以在同一个 `chat_id` 下用 OpenAI producer 和 GSV worker 并行处理。
 
 GSV 首次 TTS 可能因为模型加载、CUDA 初始化或推理缓存较慢。后台设置页点击 `启动 GSV` 时必须自动进行一次短文本 TTS 预热；预热完成后才算启动成功，不再提供单独预热接口或按钮。
 
