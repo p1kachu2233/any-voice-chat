@@ -464,6 +464,7 @@ def chat_stream(payload: ChatPayload):
         assistant_parts: list[str] = []
         assistant_lock = threading.Lock()
         event_queue: queue.Queue[Any] = queue.Queue()
+        tts_queue: queue.Queue[Any] = queue.Queue()
         done_marker = object()
         tts_done_marker = object()
         completed_openai = False
@@ -472,8 +473,7 @@ def chat_stream(payload: ChatPayload):
         speak_enabled = payload.speak and settings.get("enable_gsv_tts", True)
         text_display_mode = settings.get("text_display_mode") or "speech_sync"
         reveal_text_immediately = (not speak_enabled) or text_display_mode == "text_first"
-        tts_queue_maxsize = 1 if speak_enabled and not reveal_text_immediately else 0
-        tts_queue: queue.Queue[Any] = queue.Queue(maxsize=tts_queue_maxsize)
+        tts_backpressure_enabled = speak_enabled and not reveal_text_immediately
         min_segment_chars = int(settings.get("tts_min_segment_chars") or 10)
         soft_segment_chars = int(settings.get("tts_soft_segment_chars") or 0)
         force_segment_chars = int(settings.get("tts_force_segment_chars") or 0)
@@ -497,30 +497,15 @@ def chat_stream(payload: ChatPayload):
             run.track(response)
 
         def queue_tts_segment(segment: str) -> bool:
-            while not run.is_cancelled():
-                try:
-                    tts_queue.put(segment, timeout=0.2)
-                    return True
-                except queue.Full:
-                    continue
-            return False
-
-        def queue_tts_done() -> None:
-            while not run.is_cancelled():
-                try:
-                    tts_queue.put(tts_done_marker, timeout=0.2)
-                    return
-                except queue.Full:
-                    continue
-
-        def wait_for_tts_capacity() -> bool:
-            if not tts_queue_maxsize:
-                return True
-            while not run.is_cancelled():
-                if not tts_queue.full():
-                    return True
-                time.sleep(0.2)
-            return False
+            done_event = threading.Event() if tts_backpressure_enabled else None
+            tts_queue.put((segment, done_event))
+            if done_event:
+                while not run.is_cancelled():
+                    if done_event.wait(timeout=0.2):
+                        break
+                if run.is_cancelled():
+                    return False
+            return True
 
         def producer() -> None:
             nonlocal completed_openai, had_error
@@ -569,9 +554,6 @@ def chat_stream(payload: ChatPayload):
                         elif not reveal_text_immediately:
                             put_event("text_delta", {"delta": segment})
 
-                    if speak_enabled and not wait_for_tts_capacity():
-                        return
-
                 while not run.is_cancelled():
                     segment, tts_buffer = _pop_tts_segment(
                         tts_buffer,
@@ -599,7 +581,7 @@ def chat_stream(payload: ChatPayload):
                 put_event("error", {"message": str(exc)})
             finally:
                 if speak_enabled:
-                    queue_tts_done()
+                    tts_queue.put(tts_done_marker)
                 elif completed_openai and not had_error and not run.is_cancelled():
                     put_event("done", {"assistant_text": assistant_text()})
                     event_queue.put(done_marker)
@@ -616,14 +598,18 @@ def chat_stream(payload: ChatPayload):
                         continue
                     if item is tts_done_marker:
                         break
-                    segment = item
-                    if _has_speakable_text(segment):
-                        for event in _iter_tts_stream_events(settings, segment, run=run):
-                            if run.is_cancelled():
-                                break
-                            event_queue.put(event)
-                    elif not reveal_text_immediately:
-                        put_event("text_delta", {"delta": segment})
+                    segment, done_event = item
+                    try:
+                        if _has_speakable_text(segment):
+                            for event in _iter_tts_stream_events(settings, segment, run=run):
+                                if run.is_cancelled():
+                                    break
+                                event_queue.put(event)
+                        elif not reveal_text_immediately:
+                            put_event("text_delta", {"delta": segment})
+                    finally:
+                        if done_event:
+                            done_event.set()
             except Exception as exc:
                 if not run.is_cancelled():
                     had_error = True
