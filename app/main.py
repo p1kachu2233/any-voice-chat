@@ -473,7 +473,6 @@ def chat_stream(payload: ChatPayload):
         speak_enabled = payload.speak and settings.get("enable_gsv_tts", True)
         text_display_mode = settings.get("text_display_mode") or "speech_sync"
         reveal_text_immediately = (not speak_enabled) or text_display_mode == "text_first"
-        tts_backpressure_enabled = speak_enabled and not reveal_text_immediately
         min_segment_chars = int(settings.get("tts_min_segment_chars") or 10)
         soft_segment_chars = int(settings.get("tts_soft_segment_chars") or 0)
         force_segment_chars = int(settings.get("tts_force_segment_chars") or 0)
@@ -495,17 +494,6 @@ def chat_stream(payload: ChatPayload):
                 return
             openai_response = response
             run.track(response)
-
-        def queue_tts_segment(segment: str) -> bool:
-            done_event = threading.Event() if tts_backpressure_enabled else None
-            tts_queue.put((segment, done_event))
-            if done_event:
-                while not run.is_cancelled():
-                    if done_event.wait(timeout=0.2):
-                        break
-                if run.is_cancelled():
-                    return False
-            return True
 
         def producer() -> None:
             nonlocal completed_openai, had_error
@@ -549,8 +537,7 @@ def chat_stream(payload: ChatPayload):
                         if segment is None:
                             break
                         if speak_enabled:
-                            if not queue_tts_segment(segment):
-                                return
+                            tts_queue.put(segment)
                         elif not reveal_text_immediately:
                             put_event("text_delta", {"delta": segment})
 
@@ -565,8 +552,7 @@ def chat_stream(payload: ChatPayload):
                     if segment is None:
                         break
                     if speak_enabled:
-                        if not queue_tts_segment(segment):
-                            return
+                        tts_queue.put(segment)
                     elif not reveal_text_immediately:
                         put_event("text_delta", {"delta": segment})
                     if not tts_buffer:
@@ -593,23 +579,18 @@ def chat_stream(payload: ChatPayload):
             try:
                 while not run.is_cancelled():
                     try:
-                        item = tts_queue.get(timeout=0.2)
+                        segment = tts_queue.get(timeout=0.2)
                     except queue.Empty:
                         continue
-                    if item is tts_done_marker:
+                    if segment is tts_done_marker:
                         break
-                    segment, done_event = item
-                    try:
-                        if _has_speakable_text(segment):
-                            for event in _iter_tts_stream_events(settings, segment, run=run):
-                                if run.is_cancelled():
-                                    break
-                                event_queue.put(event)
-                        elif not reveal_text_immediately:
-                            put_event("text_delta", {"delta": segment})
-                    finally:
-                        if done_event:
-                            done_event.set()
+                    if _has_speakable_text(segment):
+                        for event in _iter_tts_stream_events(settings, segment, run=run):
+                            if run.is_cancelled():
+                                break
+                            event_queue.put(event)
+                    elif not reveal_text_immediately:
+                        put_event("text_delta", {"delta": segment})
             except Exception as exc:
                 if not run.is_cancelled():
                     had_error = True
